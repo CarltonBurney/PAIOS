@@ -1,0 +1,26 @@
+{
+  "policySetName": "PAIOS AI Governance Policies v1.0",
+  "description": "I designed this policy set to capture approval, accountability, and audit controls for AI operations.",
+  "policies": [
+    {
+      "id": "PS-001",
+      "name": "Request Classification",
+      "summary": "I defined classification criteria for AI service requests and escalation paths.",
+      "controls": [
+        "Classify requests by intent and sensitivity",
+        "Require human review for high-risk operations",
+        "Log classification decisions for audit"
+      ]
+    },
+    {
+      "id": "PS-002",
+      "name": "Approval Workflow",
+      "summary": "I defined an approval workflow that ensures accountability for AI-driven decisions.",
+      "controls": [
+        "Require explicit approval for privileged workflows",
+        "Document approver identity and timestamp",
+        "Enforce rollback and audit traceability"
+      ]
+    }
+  ]
+}
