@@ -1,1 +1,0 @@
-﻿AI Neural Governance v1.0 is a governance framework for AI-enabled Microsoft 365 environments focused on request classification, approval workflows, accountability, human oversight, and operational controls.

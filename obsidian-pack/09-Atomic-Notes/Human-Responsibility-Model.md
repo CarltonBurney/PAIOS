@@ -1,1 +1,0 @@
-﻿I remain responsible for vision, architecture, requirements, governance, validation, and final outcomes. AI assists with implementation, documentation, analysis, workflow generation, research, and content creation.

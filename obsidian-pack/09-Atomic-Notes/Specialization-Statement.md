@@ -1,1 +1,0 @@
-﻿I specialize in identifying operational problems, defining governance and business requirements, and directing AI-assisted systems to accelerate implementation, documentation, workflow development, and organizational knowledge capture.
