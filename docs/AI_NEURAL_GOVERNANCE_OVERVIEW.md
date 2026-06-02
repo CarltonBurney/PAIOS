@@ -2,7 +2,7 @@
 
 ## Purpose
 
-I built AI Neural Governance v1.0 because most organizations are focused on deploying AI, but not enough are focused on governing it.
+AI Neural Governance v1.0 was developed to address a gap most organizations encounter when deploying AI — capability expands faster than governance.
 
 The framework models how AI requests should be classified, approved, routed, logged, and controlled inside Microsoft 365 environments.
 
