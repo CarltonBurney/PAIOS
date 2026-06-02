@@ -1,5 +1,14 @@
-# Architecture Workflows
+# Workflow Documentation
 
-I use this folder to capture workflow diagrams and process narratives for PAIOS operations.
+This directory contains workflow references describing how requests, approvals, governance controls, and operational processes move through the framework.
 
-Add workflow artifacts here that describe request classification, approval routing, AI persona governance, and operational oversight in Microsoft 365 AI environments.
+Workflow examples may include:
+
+- Request Classification
+- Human Approval Processes
+- Knowledge Retrieval
+- Workflow Automation
+- Escalation Paths
+- Governance Review Cycles
+
+These workflows are intended to illustrate operational behavior rather than implementation-specific logic.

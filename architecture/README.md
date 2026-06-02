@@ -1,12 +1,23 @@
 # Architecture
 
-I organized this folder to capture architecture diagrams, integration workflows, and technical design artifacts for PAIOS.
+The architecture directory contains design artifacts, integration references, and workflow documentation for the PAIOS framework.
 
-This repository demonstrates how I designed the control plane, agent orchestration, and Microsoft 365 integration to work together under a governance-first AI operating model.
+The framework is organized into two primary areas:
 
-## Subfolders
+- **diagrams/** — visual representations of system components, governance flows, and integration topology
+- **workflows/** — process references describing how requests, approvals, and operational activity move through the control model
 
-- `diagrams/` — visual architecture sketches and system topology diagrams
-- `workflows/` — process maps and operational workflow descriptions
+## Components
 
-Add visual diagrams and workflow descriptions here to show how the control plane, agent orchestration, and Microsoft 365 integration work together.
+The architecture reflects the following structural layers:
+
+- Control plane responsible for classifying and routing AI requests
+- Governance enforcement layer applying policy and approval requirements
+- Knowledge management layer for documentation capture and reuse
+- Integration layer connecting Microsoft 365 services, workflows, and AI systems
+
+## Data and Governance Flow
+
+Requests enter the control plane, are classified by type and risk, routed through applicable governance controls, executed against appropriate AI or workflow systems, and logged for auditability and knowledge capture.
+
+Human approval gates are applied based on classification results before execution proceeds.

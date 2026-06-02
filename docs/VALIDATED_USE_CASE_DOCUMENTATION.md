@@ -1,4 +1,4 @@
-# Validated Use Case: AI-Assisted Documentation
+﻿# Validated Use Case: AI-Assisted Documentation
 
 ## Problem
 
@@ -8,7 +8,7 @@ That creates avoidable support volume.
 
 It also creates knowledge loss because the fix remains in one technician's head or inside one closed ticket.
 
-## What I Did
+## Approach
 
 I used PAIOS-style workflows to create practical support documentation for recurring technical issues.
 
@@ -56,3 +56,4 @@ This use case supports the resume claims around:
 - Enterprise IT operations
 - Workflow design
 - Microsoft 365 knowledge systems
+

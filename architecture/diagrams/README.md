@@ -1,5 +1,14 @@
 # Architecture Diagrams
 
-I use this folder to store visual representations of the PAIOS control plane, integration topology, and AI agent orchestration flow.
+This directory contains visual representations of the PAIOS framework.
 
-Add diagrams here that demonstrate how the system components interact, where governance controls are enforced, and how Microsoft 365 services connect to the operating framework.
+Diagram categories include:
+
+- System Architecture
+- Governance Flows
+- Request Classification
+- Human-in-the-Loop Processes
+- Microsoft 365 Integration
+- Workflow Orchestration
+
+The diagrams are intended to provide visual context for the concepts described throughout the repository documentation.

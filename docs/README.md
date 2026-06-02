@@ -1,42 +1,35 @@
-# PAIOS Documentation
+# Documentation Overview
 
-I created this `docs/` folder to centralize the core PAIOS documentation artifacts that explain the framework, the governance model, and the integration strategy.
+This directory contains the primary documentation for the PAIOS framework.
 
-This documentation is intended to make it immediately clear that I built PAIOS, I designed AI Neural Governance v1.0, and I can translate enterprise governance problems into technical solutions.
+The materials describe governance concepts, operational workflows, architectural components, implementation considerations, and enterprise use cases.
 
-## What’s inside
+## Documentation Areas
 
-- `PAIOS_CONTROL_PLANE.md` — the control plane design and core operating model
-- `AI_NEURAL_GOVERNANCE_OVERVIEW.md` — the governance framework I built for AI oversight and approval workflows
-- `GOVERNANCE_WORKFLOW_EXAMPLE.md` — a practical governance workflow example
-- `ENTERPRISE_USE_CASES.md` — enterprise problem statements and use cases I addressed
-- `VALIDATED_USE_CASE_DOCUMENTATION.md` — verification and validation approach for use cases
-- `MICROSOFT_365_INTEGRATION_STRATEGY.md` — my Microsoft 365 integration strategy
-- `ROADMAP_AGENT_GOVERNANCE.md` — the agent governance roadmap and future guidance
+**AI Neural Governance**
+Describes governance models, accountability structures, approval workflows, and operational controls intended to support responsible AI adoption.
 
-## Why this documentation exists
+**Control Plane**
+Explains the orchestration layer responsible for coordinating AI systems, knowledge repositories, workflows, and governance mechanisms.
 
-I built this documentation set to provide evidence for AI governance, Microsoft 365 AI adoption, knowledge management, and workflow automation capabilities.
+**Enterprise Use Cases**
+Illustrates how governance-oriented AI frameworks may be applied across operational, support, documentation, and knowledge management scenarios.
 
-This repository is not marketing; it is a professional portfolio artifact that shows how I designed governance frameworks, operational controls, and AI orchestration for enterprise environments.
+**Microsoft 365 Integration Strategy**
+Explores integration concepts involving Microsoft 365, SharePoint, Teams, Power Platform, and related services.
 
-## How to use this folder
+**Governance Workflow Examples**
+Provides examples of governance processes, review mechanisms, and human-in-the-loop operational models.
 
-1. Start with `AI_NEURAL_GOVERNANCE_OVERVIEW.md` to understand the governance model I am building.
-2. Review `PAIOS_CONTROL_PLANE.md` for the technical control plane architecture and operating model.
-3. Read `MICROSOFT_365_INTEGRATION_STRATEGY.md` to see how I integrated the framework with Microsoft 365 AI and Copilot.
-4. Explore `ENTERPRISE_USE_CASES.md` and `VALIDATED_USE_CASE_DOCUMENTATION.md` for use case evidence and validation.
-5. Follow `ROADMAP_AGENT_GOVERNANCE.md` for next-step guidance and roadmap thinking.
+## Intended Audience
 
-## Evidence for resume claims
+This documentation is intended for:
 
-This documentation supports claims related to:
+- Enterprise architects
+- Technology leaders
+- Governance stakeholders
+- Microsoft 365 practitioners
+- AI adoption teams
+- Managed service providers
 
-- AI Governance
-- Microsoft 365 / Copilot
-- Power Platform and SharePoint integration
-- Knowledge Management
-- Workflow Automation
-- AI Agent Design
-- AI Operations
-- Enterprise Architecture
+The focus is understanding architecture, governance, operational alignment, and responsible AI implementation practices.
