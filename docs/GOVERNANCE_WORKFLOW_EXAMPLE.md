@@ -1,4 +1,4 @@
-# Governance Workflow Example
+﻿# Governance Workflow Example
 
 ## Scenario
 
@@ -6,7 +6,7 @@ A support technician wants to use AI to create a client-facing troubleshooting g
 
 Without governance, the technician may paste sensitive details into an AI tool, generate inconsistent documentation, and store the output in a location nobody else can find.
 
-I designed the PAIOS governance flow to solve that kind of problem.
+The PAIOS governance flow addresses that kind of problem.
 
 ## Workflow
 
@@ -57,3 +57,4 @@ This approach supports:
 - Knowledge reuse
 - Human accountability
 - Governance over AI-generated outputs
+
