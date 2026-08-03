@@ -1,0 +1,768 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "$connections": {
+        "type": "Object",
+        "defaultValue": {}
+      },
+      "dataverseEnvironmentUrl": {
+        "type": "String",
+        "defaultValue": "contoso.crm.dynamics.com",
+        "metadata": {
+          "description": "Dataverse environment hostname used by the Common Data Service (current environment) connector."
+        }
+      },
+      "remediationLogTable": {
+        "type": "String",
+        "defaultValue": "cr123_tier1remediationlogs",
+        "metadata": {
+          "description": "Logical name of the Dataverse table holding centralized remediation records."
+        }
+      },
+      "tier2TeamId": {
+        "type": "String",
+        "defaultValue": "00000000-0000-0000-0000-000000000000"
+      },
+      "tier2ChannelId": {
+        "type": "String",
+        "defaultValue": "19:00000000000000000000000000000000@thread.tacv2"
+      },
+      "printerRunbookWebhookUri": {
+        "type": "SecureString",
+        "defaultValue": "",
+        "metadata": {
+          "description": "Azure Automation webhook that starts the printer remediation runbook. Supply from Key Vault at deployment time; never commit a value."
+        }
+      }
+    },
+    "triggers": {
+      "When_A_Tier1_Request_Is_Received": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "method": "POST",
+          "schema": {
+            "type": "object",
+            "required": [
+              "ticketId",
+              "requestType",
+              "requester"
+            ],
+            "properties": {
+              "ticketId": {
+                "type": "string",
+                "description": "Correlating identifier from the originating service desk record."
+              },
+              "requestType": {
+                "type": "string",
+                "enum": [
+                  "password_reset",
+                  "printer_diagnostics"
+                ]
+              },
+              "channel": {
+                "type": "string",
+                "description": "Origin of the request, e.g. teams_mobile.",
+                "default": "teams_mobile"
+              },
+              "requester": {
+                "type": "object",
+                "required": [
+                  "userPrincipalName",
+                  "objectId"
+                ],
+                "properties": {
+                  "userPrincipalName": {
+                    "type": "string"
+                  },
+                  "objectId": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "mfaSatisfied": {
+                    "type": "boolean",
+                    "description": "Set by the intake bot after a successful step-up authentication challenge."
+                  }
+                }
+              },
+              "printerContext": {
+                "type": "object",
+                "properties": {
+                  "printerName": {
+                    "type": "string"
+                  },
+                  "printServer": {
+                    "type": "string"
+                  },
+                  "deviceId": {
+                    "type": "string"
+                  },
+                  "reportedSymptom": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "actions": {
+      "Initialize_Correlation_Id": {
+        "type": "InitializeVariable",
+        "runAfter": {},
+        "inputs": {
+          "variables": [
+            {
+              "name": "correlationId",
+              "type": "string",
+              "value": "@{coalesce(triggerBody()?['ticketId'], workflow()['run']['name'])}"
+            },
+            {
+              "name": "startTimeUtc",
+              "type": "string",
+              "value": "@{utcNow()}"
+            }
+          ]
+        }
+      },
+      "Initialize_Remediation_Outcome": {
+        "type": "InitializeVariable",
+        "runAfter": {
+          "Initialize_Correlation_Id": [
+            "Succeeded"
+          ]
+        },
+        "inputs": {
+          "variables": [
+            {
+              "name": "remediationOutcome",
+              "type": "string",
+              "value": "pending"
+            }
+          ]
+        }
+      },
+      "Initialize_Failure_Reason": {
+        "type": "InitializeVariable",
+        "runAfter": {
+          "Initialize_Remediation_Outcome": [
+            "Succeeded"
+          ]
+        },
+        "inputs": {
+          "variables": [
+            {
+              "name": "failureReason",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        }
+      },
+      "Try_Remediation": {
+        "type": "Scope",
+        "runAfter": {
+          "Initialize_Failure_Reason": [
+            "Succeeded"
+          ]
+        },
+        "actions": {
+          "Resolve_Requester_From_Entra_ID": {
+            "type": "Http",
+            "runAfter": {},
+            "inputs": {
+              "method": "GET",
+              "uri": "https://graph.microsoft.com/v1.0/users/@{encodeURIComponent(triggerBody()?['requester']?['objectId'])}?$select=id,userPrincipalName,accountEnabled,onPremisesSyncEnabled",
+              "authentication": {
+                "type": "ManagedServiceIdentity",
+                "audience": "https://graph.microsoft.com"
+              },
+              "retryPolicy": {
+                "type": "exponential",
+                "count": 4,
+                "interval": "PT10S",
+                "minimumInterval": "PT5S",
+                "maximumInterval": "PT2M"
+              }
+            },
+            "runtimeConfiguration": {
+              "secureData": {
+                "properties": [
+                  "outputs"
+                ]
+              }
+            }
+          },
+          "Check_Account_Is_Eligible": {
+            "type": "If",
+            "runAfter": {
+              "Resolve_Requester_From_Entra_ID": [
+                "Succeeded"
+              ]
+            },
+            "expression": {
+              "and": [
+                {
+                  "equals": [
+                    "@body('Resolve_Requester_From_Entra_ID')?['accountEnabled']",
+                    true
+                  ]
+                }
+              ]
+            },
+            "actions": {
+              "Switch_On_Request_Type": {
+                "type": "Switch",
+                "runAfter": {},
+                "expression": "@triggerBody()?['requestType']",
+                "cases": {
+                  "Password_Reset": {
+                    "case": "password_reset",
+                    "actions": {
+                      "Check_Step_Up_Authentication": {
+                        "type": "If",
+                        "runAfter": {},
+                        "expression": {
+                          "and": [
+                            {
+                              "equals": [
+                                "@triggerBody()?['requester']?['mfaSatisfied']",
+                                true
+                              ]
+                            }
+                          ]
+                        },
+                        "actions": {
+                          "Request_Password_Reset": {
+                            "type": "Http",
+                            "runAfter": {},
+                            "inputs": {
+                              "method": "POST",
+                              "uri": "https://graph.microsoft.com/v1.0/users/@{encodeURIComponent(triggerBody()?['requester']?['objectId'])}/authentication/passwordMethods/28c10230-6103-485e-b985-444c60001490/resetPassword",
+                              "headers": {
+                                "Content-Type": "application/json"
+                              },
+                              "body": {
+                                "requireChangeOnNextSignIn": true
+                              },
+                              "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://graph.microsoft.com"
+                              },
+                              "retryPolicy": {
+                                "type": "none"
+                              }
+                            },
+                            "runtimeConfiguration": {
+                              "secureData": {
+                                "properties": [
+                                  "inputs",
+                                  "outputs"
+                                ]
+                              }
+                            }
+                          },
+                          "Poll_Until_Reset_Completes": {
+                            "type": "Until",
+                            "runAfter": {
+                              "Request_Password_Reset": [
+                                "Succeeded"
+                              ]
+                            },
+                            "expression": "@not(equals(body('Get_Reset_Operation_Status')?['status'], 'running'))",
+                            "limit": {
+                              "count": 12,
+                              "timeout": "PT5M"
+                            },
+                            "actions": {
+                              "Delay_Between_Polls": {
+                                "type": "Wait",
+                                "runAfter": {},
+                                "inputs": {
+                                  "interval": {
+                                    "count": 5,
+                                    "unit": "Second"
+                                  }
+                                }
+                              },
+                              "Get_Reset_Operation_Status": {
+                                "type": "Http",
+                                "runAfter": {
+                                  "Delay_Between_Polls": [
+                                    "Succeeded"
+                                  ]
+                                },
+                                "inputs": {
+                                  "method": "GET",
+                                  "uri": "@outputs('Request_Password_Reset')['headers']['Location']",
+                                  "authentication": {
+                                    "type": "ManagedServiceIdentity",
+                                    "audience": "https://graph.microsoft.com"
+                                  }
+                                },
+                                "runtimeConfiguration": {
+                                  "secureData": {
+                                    "properties": [
+                                      "inputs",
+                                      "outputs"
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "Confirm_Reset_Succeeded": {
+                            "type": "If",
+                            "runAfter": {
+                              "Poll_Until_Reset_Completes": [
+                                "Succeeded"
+                              ]
+                            },
+                            "expression": {
+                              "and": [
+                                {
+                                  "equals": [
+                                    "@body('Get_Reset_Operation_Status')?['status']",
+                                    "succeeded"
+                                  ]
+                                }
+                              ]
+                            },
+                            "actions": {
+                              "Set_Outcome_Password_Reset_Succeeded": {
+                                "type": "SetVariable",
+                                "runAfter": {},
+                                "inputs": {
+                                  "name": "remediationOutcome",
+                                  "value": "remediated"
+                                }
+                              }
+                            },
+                            "else": {
+                              "actions": {
+                                "Fail_Password_Reset_Not_Confirmed": {
+                                  "type": "Terminate",
+                                  "runAfter": {},
+                                  "inputs": {
+                                    "runStatus": "Failed",
+                                    "runError": {
+                                      "code": "PasswordResetNotConfirmed",
+                                      "message": "Graph reported a non-success terminal status for the password reset operation."
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "else": {
+                          "actions": {
+                            "Fail_Step_Up_Authentication_Required": {
+                              "type": "Terminate",
+                              "runAfter": {},
+                              "inputs": {
+                                "runStatus": "Failed",
+                                "runError": {
+                                  "code": "StepUpAuthenticationRequired",
+                                  "message": "Password reset denied. The intake bot did not record a satisfied MFA challenge for this requester."
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "Printer_Diagnostics": {
+                    "case": "printer_diagnostics",
+                    "actions": {
+                      "Read_Print_Queue_State": {
+                        "type": "Http",
+                        "runAfter": {},
+                        "inputs": {
+                          "method": "GET",
+                          "uri": "https://graph.microsoft.com/v1.0/print/printers/@{encodeURIComponent(coalesce(triggerBody()?['printerContext']?['deviceId'], ''))}/jobs",
+                          "authentication": {
+                            "type": "ManagedServiceIdentity",
+                            "audience": "https://graph.microsoft.com"
+                          },
+                          "retryPolicy": {
+                            "type": "exponential",
+                            "count": 3,
+                            "interval": "PT15S",
+                            "minimumInterval": "PT5S",
+                            "maximumInterval": "PT2M"
+                          }
+                        }
+                      },
+                      "Classify_Printer_Fault": {
+                        "type": "Compose",
+                        "runAfter": {
+                          "Read_Print_Queue_State": [
+                            "Succeeded"
+                          ]
+                        },
+                        "inputs": {
+                          "faultClass": "@{if(greater(length(coalesce(body('Read_Print_Queue_State')?['value'], json('[]'))), 25), 'queue_backlog', if(contains(toLower(coalesce(triggerBody()?['printerContext']?['reportedSymptom'], '')), 'driver'), 'driver_mismatch', if(contains(toLower(coalesce(triggerBody()?['printerContext']?['reportedSymptom'], '')), 'offline'), 'hardware_offline', 'spooler_hung')))}",
+                          "queueDepth": "@length(coalesce(body('Read_Print_Queue_State')?['value'], json('[]')))",
+                          "printerName": "@{coalesce(triggerBody()?['printerContext']?['printerName'], 'unspecified')}"
+                        }
+                      },
+                      "Switch_On_Fault_Class": {
+                        "type": "Switch",
+                        "runAfter": {
+                          "Classify_Printer_Fault": [
+                            "Succeeded"
+                          ]
+                        },
+                        "expression": "@outputs('Classify_Printer_Fault')['faultClass']",
+                        "cases": {
+                          "Hardware_Offline": {
+                            "case": "hardware_offline",
+                            "actions": {
+                              "Fail_Hardware_Not_Auto_Remediable": {
+                                "type": "Terminate",
+                                "runAfter": {},
+                                "inputs": {
+                                  "runStatus": "Failed",
+                                  "runError": {
+                                    "code": "HardwareFaultNotAutoRemediable",
+                                    "message": "Device reported offline. Physical inspection required; routing to Tier 2."
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "default": {
+                          "actions": {
+                            "Start_Printer_Remediation_Runbook": {
+                              "type": "Http",
+                              "runAfter": {},
+                              "inputs": {
+                                "method": "POST",
+                                "uri": "@parameters('printerRunbookWebhookUri')",
+                                "headers": {
+                                  "Content-Type": "application/json"
+                                },
+                                "body": {
+                                  "correlationId": "@{variables('correlationId')}",
+                                  "faultClass": "@{outputs('Classify_Printer_Fault')['faultClass']}",
+                                  "printerName": "@{coalesce(triggerBody()?['printerContext']?['printerName'], '')}",
+                                  "printServer": "@{coalesce(triggerBody()?['printerContext']?['printServer'], '')}"
+                                },
+                                "retryPolicy": {
+                                  "type": "exponential",
+                                  "count": 3,
+                                  "interval": "PT20S",
+                                  "minimumInterval": "PT10S",
+                                  "maximumInterval": "PT5M"
+                                }
+                              },
+                              "runtimeConfiguration": {
+                                "secureData": {
+                                  "properties": [
+                                    "inputs"
+                                  ]
+                                }
+                              }
+                            },
+                            "Verify_Print_Path_Restored": {
+                              "type": "Http",
+                              "runAfter": {
+                                "Start_Printer_Remediation_Runbook": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "inputs": {
+                                "method": "GET",
+                                "uri": "https://graph.microsoft.com/v1.0/print/printers/@{encodeURIComponent(coalesce(triggerBody()?['printerContext']?['deviceId'], ''))}",
+                                "authentication": {
+                                  "type": "ManagedServiceIdentity",
+                                  "audience": "https://graph.microsoft.com"
+                                },
+                                "retryPolicy": {
+                                  "type": "exponential",
+                                  "count": 3,
+                                  "interval": "PT30S",
+                                  "minimumInterval": "PT15S",
+                                  "maximumInterval": "PT5M"
+                                }
+                              }
+                            },
+                            "Confirm_Printer_Verification": {
+                              "type": "If",
+                              "runAfter": {
+                                "Verify_Print_Path_Restored": [
+                                  "Succeeded"
+                                ]
+                              },
+                              "expression": {
+                                "and": [
+                                  {
+                                    "equals": [
+                                      "@body('Verify_Print_Path_Restored')?['status']?['state']",
+                                      "idle"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "actions": {
+                                "Set_Outcome_Printer_Remediated": {
+                                  "type": "SetVariable",
+                                  "runAfter": {},
+                                  "inputs": {
+                                    "name": "remediationOutcome",
+                                    "value": "remediated"
+                                  }
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Fail_Printer_Verification": {
+                                    "type": "Terminate",
+                                    "runAfter": {},
+                                    "inputs": {
+                                      "runStatus": "Failed",
+                                      "runError": {
+                                        "code": "PrinterVerificationFailed",
+                                        "message": "Remediation runbook completed but the print path did not return to an idle state."
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "default": {
+                  "actions": {
+                    "Fail_Unsupported_Request_Type": {
+                      "type": "Terminate",
+                      "runAfter": {},
+                      "inputs": {
+                        "runStatus": "Failed",
+                        "runError": {
+                          "code": "UnsupportedRequestType",
+                          "message": "No Tier-1 automation is registered for the supplied requestType."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "actions": {
+                "Fail_Account_Ineligible": {
+                  "type": "Terminate",
+                  "runAfter": {},
+                  "inputs": {
+                    "runStatus": "Failed",
+                    "runError": {
+                      "code": "AccountIneligible",
+                      "message": "Requester account is disabled or otherwise ineligible for self-service remediation."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Catch_Log_Exception": {
+        "type": "Scope",
+        "runAfter": {
+          "Try_Remediation": [
+            "Failed",
+            "TimedOut"
+          ]
+        },
+        "actions": {
+          "Collect_Failed_Action_Results": {
+            "type": "Query",
+            "runAfter": {},
+            "inputs": {
+              "from": "@result('Try_Remediation')",
+              "where": "@equals(item()['status'], 'Failed')"
+            }
+          },
+          "Set_Failure_Reason": {
+            "type": "SetVariable",
+            "runAfter": {
+              "Collect_Failed_Action_Results": [
+                "Succeeded"
+              ]
+            },
+            "inputs": {
+              "name": "failureReason",
+              "value": "@{coalesce(first(body('Collect_Failed_Action_Results'))?['error']?['message'], 'Unclassified remediation failure.')}"
+            }
+          },
+          "Set_Outcome_Escalated": {
+            "type": "SetVariable",
+            "runAfter": {
+              "Set_Failure_Reason": [
+                "Succeeded"
+              ]
+            },
+            "inputs": {
+              "name": "remediationOutcome",
+              "value": "escalated"
+            }
+          },
+          "Log_Exception_To_Dataverse": {
+            "type": "ApiConnection",
+            "runAfter": {
+              "Set_Outcome_Escalated": [
+                "Succeeded"
+              ]
+            },
+            "inputs": {
+              "host": {
+                "connection": {
+                  "name": "@parameters('$connections')['commondataserviceforapps']['connectionId']"
+                }
+              },
+              "method": "post",
+              "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('dataverseEnvironmentUrl')))}/tables/@{encodeURIComponent(encodeURIComponent(parameters('remediationLogTable')))}/items",
+              "body": {
+                "cr123_correlationid": "@{variables('correlationId')}",
+                "cr123_ticketid": "@{coalesce(triggerBody()?['ticketId'], '')}",
+                "cr123_requesttype": "@{coalesce(triggerBody()?['requestType'], 'unknown')}",
+                "cr123_requesterupn": "@{coalesce(triggerBody()?['requester']?['userPrincipalName'], '')}",
+                "cr123_intakechannel": "@{coalesce(triggerBody()?['channel'], 'teams_mobile')}",
+                "cr123_outcome": "@{variables('remediationOutcome')}",
+                "cr123_failurereason": "@{variables('failureReason')}",
+                "cr123_failedactions": "@{string(body('Collect_Failed_Action_Results'))}",
+                "cr123_workflowrunid": "@{workflow()['run']['name']}",
+                "cr123_starttimeutc": "@{variables('startTimeUtc')}",
+                "cr123_completedtimeutc": "@{utcNow()}"
+              }
+            },
+            "runtimeConfiguration": {
+              "secureData": {
+                "properties": [
+                  "inputs"
+                ]
+              }
+            }
+          },
+          "Notify_Tier2_Support_Channel": {
+            "type": "ApiConnection",
+            "runAfter": {
+              "Log_Exception_To_Dataverse": [
+                "Succeeded",
+                "Failed"
+              ]
+            },
+            "inputs": {
+              "host": {
+                "connection": {
+                  "name": "@parameters('$connections')['teams']['connectionId']"
+                }
+              },
+              "method": "post",
+              "path": "/v3/beta/teams/@{encodeURIComponent(parameters('tier2TeamId'))}/channels/@{encodeURIComponent(parameters('tier2ChannelId'))}/messages",
+              "body": {
+                "contentType": "html",
+                "content": "<strong>Tier-1 automation escalated</strong><br/>Ticket: @{coalesce(triggerBody()?['ticketId'], 'n/a')}<br/>Scenario: @{coalesce(triggerBody()?['requestType'], 'unknown')}<br/>Requester: @{coalesce(triggerBody()?['requester']?['userPrincipalName'], 'unknown')}<br/>Reason: @{variables('failureReason')}<br/>Run ID: @{workflow()['run']['name']}"
+              }
+            }
+          }
+        }
+      },
+      "Log_Successful_Remediation": {
+        "type": "ApiConnection",
+        "runAfter": {
+          "Try_Remediation": [
+            "Succeeded"
+          ]
+        },
+        "inputs": {
+          "host": {
+            "connection": {
+              "name": "@parameters('$connections')['commondataserviceforapps']['connectionId']"
+            }
+          },
+          "method": "post",
+          "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent(parameters('dataverseEnvironmentUrl')))}/tables/@{encodeURIComponent(encodeURIComponent(parameters('remediationLogTable')))}/items",
+          "body": {
+            "cr123_correlationid": "@{variables('correlationId')}",
+            "cr123_ticketid": "@{coalesce(triggerBody()?['ticketId'], '')}",
+            "cr123_requesttype": "@{coalesce(triggerBody()?['requestType'], 'unknown')}",
+            "cr123_requesterupn": "@{coalesce(triggerBody()?['requester']?['userPrincipalName'], '')}",
+            "cr123_intakechannel": "@{coalesce(triggerBody()?['channel'], 'teams_mobile')}",
+            "cr123_outcome": "@{variables('remediationOutcome')}",
+            "cr123_failurereason": "",
+            "cr123_workflowrunid": "@{workflow()['run']['name']}",
+            "cr123_starttimeutc": "@{variables('startTimeUtc')}",
+            "cr123_completedtimeutc": "@{utcNow()}"
+          }
+        },
+        "runtimeConfiguration": {
+          "secureData": {
+            "properties": [
+              "inputs"
+            ]
+          }
+        }
+      },
+      "Respond_To_Intake_Bot": {
+        "type": "Response",
+        "kind": "Http",
+        "runAfter": {
+          "Log_Successful_Remediation": [
+            "Succeeded",
+            "Failed",
+            "Skipped"
+          ],
+          "Catch_Log_Exception": [
+            "Succeeded",
+            "Failed",
+            "Skipped"
+          ]
+        },
+        "inputs": {
+          "statusCode": "@if(equals(variables('remediationOutcome'), 'remediated'), 200, 202)",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "correlationId": "@{variables('correlationId')}",
+            "ticketId": "@{coalesce(triggerBody()?['ticketId'], '')}",
+            "outcome": "@{variables('remediationOutcome')}",
+            "failureReason": "@{variables('failureReason')}",
+            "workflowRunId": "@{workflow()['run']['name']}"
+          }
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "parameters": {
+    "$connections": {
+      "value": {
+        "commondataserviceforapps": {
+          "connectionId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-tier1-remediation/providers/Microsoft.Web/connections/commondataserviceforapps",
+          "connectionName": "commondataserviceforapps",
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/eastus/managedApis/commondataserviceforapps"
+        },
+        "teams": {
+          "connectionId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-tier1-remediation/providers/Microsoft.Web/connections/teams",
+          "connectionName": "teams",
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Web/locations/eastus/managedApis/teams"
+        }
+      }
+    }
+  }
+}
