@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paios.dev/schemas/audit-record.schema.json",
+  "title": "PAIOS Audit Record",
+  "description": "A single append-only entry written at every lifecycle state transition. The sink accepts no updates and no deletes; a correction is a new record referencing the record it corrects.",
+  "type": "object",
+  "required": ["record_id", "request_id", "to_state", "actor", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "record_id": { "type": "string" },
+    "request_id": { "type": "string" },
+    "from_state": {
+      "type": "string",
+      "description": "Absent on the first record of a request."
+    },
+    "to_state": { "type": "string" },
+    "actor": {
+      "type": "object",
+      "required": ["type", "identifier"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["principal", "approver", "control_plane", "agent"]
+        },
+        "identifier": { "type": "string" }
+      }
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "policy_bundle_version": { "type": "string" },
+    "matched_rule_ids": { "type": "array", "items": { "type": "string" } },
+    "risk_level": { "type": "string" },
+    "detail": {
+      "type": "object",
+      "description": "Transition-specific fields. Must not contain request or output content; the audit trail records that work occurred and under what authority, not what the work said.",
+      "additionalProperties": true
+    },
+    "corrects": {
+      "type": "string",
+      "description": "record_id this entry corrects. Corrections are appended, never applied in place."
+    }
+  }
+}

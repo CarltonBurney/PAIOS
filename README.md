@@ -23,13 +23,10 @@ Rather than functioning as a standalone AI assistant, PAIOS serves as a control 
 Project documentation, governance concepts, operational models, use cases, and implementation guidance.
 
 **architecture/**
-Architecture references, diagrams, workflows, and system design documentation.
+System design specification, architecture decision records, diagrams, and workflow references. Start with [`architecture/DESIGN.md`](architecture/DESIGN.md) for component boundaries, the request lifecycle, and policy evaluation semantics.
 
 **policies/**
-Sample governance policies and control definitions.
-
-**src/**
-Reference implementation materials and supporting assets.
+Schemas for policy bundles, agent policies, request records, and audit records, with a conforming sample bundle.
 
 ## Project Scope
 

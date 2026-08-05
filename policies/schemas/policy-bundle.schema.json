@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paios.dev/schemas/policy-bundle.schema.json",
+  "title": "PAIOS Policy Bundle",
+  "description": "An immutable, versioned set of governance rules evaluated by the Policy Decision Point. A request pins a bundle version at context resolution and evaluates against that version for its entire lifetime.",
+  "type": "object",
+  "required": ["bundle_version", "published_at", "classification", "decision_rules"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema, used by editors for completion and inline validation."
+    },
+    "bundle_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version. Immutable once published; a governance change produces a new version rather than editing an existing one."
+    },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "published_at": { "type": "string", "format": "date-time" },
+    "supersedes": {
+      "type": "string",
+      "description": "Version of the bundle this one replaces. Absent on the first published bundle."
+    },
+
+    "classification": {
+      "type": "object",
+      "description": "Configuration for the two-stage classifier.",
+      "required": ["confidence_threshold", "deterministic_rules"],
+      "additionalProperties": false,
+      "properties": {
+        "confidence_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Model-assisted results below this confidence are classified as 'unclassified', which the risk engine treats as sensitive."
+        },
+        "deterministic_rules": {
+          "type": "array",
+          "description": "Authoritative pattern rules. A request matched here is not revisited by the model-assisted pass.",
+          "items": {
+            "type": "object",
+            "required": ["rule_id", "match_patterns", "request_type"],
+            "additionalProperties": false,
+            "properties": {
+              "rule_id": { "$ref": "#/$defs/rule_id" },
+              "description": { "type": "string" },
+              "match_patterns": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1
+              },
+              "request_type": { "$ref": "#/$defs/request_type" },
+              "sensitivity_signals": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/sensitivity_signal" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "decision_rules": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Evaluated as an unordered set. All matching rules are collected, then resolved by: deny overrides; otherwise require_approval; otherwise allow; otherwise require_approval when nothing matched.",
+      "items": { "$ref": "#/$defs/decision_rule" }
+    },
+
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Elapsed time before an unanswered approval escalates. Timeout never resolves to approved or denied."
+        },
+        "escalation_role": {
+          "type": "string",
+          "description": "Role that receives escalated approvals."
+        }
+      }
+    },
+
+    "agent_policies": {
+      "type": "array",
+      "description": "Agent policies governed by this bundle. See agent-policy.schema.json.",
+      "items": { "$ref": "agent-policy.schema.json" }
+    }
+  },
+
+  "$defs": {
+    "rule_id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,4}-[0-9]{3,}$",
+      "description": "Stable identifier. Recorded on the decision so that reasoning is recoverable from the immutable bundle."
+    },
+    "request_type": {
+      "type": "string",
+      "enum": [
+        "project",
+        "technical",
+        "logical",
+        "core",
+        "governance_change",
+        "unclassified"
+      ]
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "standard", "sensitive", "compliance", "security"]
+    },
+    "sensitivity_signal": {
+      "type": "string",
+      "enum": [
+        "personal_data",
+        "client_data",
+        "regulatory",
+        "records_retention",
+        "access_modification",
+        "system_change",
+        "credential_access",
+        "log_access",
+        "external_communication"
+      ]
+    },
+    "agent_role": {
+      "type": "string",
+      "description": "Logical agent role. Resolution to a concrete model happens at execution time and is recorded in the audit trail."
+    },
+
+    "decision_rule": {
+      "type": "object",
+      "required": ["rule_id", "match", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": { "$ref": "#/$defs/rule_id" },
+        "description": { "type": "string" },
+        "match": {
+          "type": "object",
+          "description": "All present conditions must hold for the rule to match. An omitted condition is unconstrained.",
+          "additionalProperties": false,
+          "properties": {
+            "request_type": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/request_type" }
+            },
+            "risk_level": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/risk_level" }
+            },
+            "sensitivity_signals_any": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/sensitivity_signal" }
+            },
+            "business_area": { "type": "array", "items": { "type": "string" } },
+            "principal_role": { "type": "array", "items": { "type": "string" } },
+            "channel": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["teams", "copilot_studio", "http_api", "power_automate"]
+              }
+            }
+          }
+        },
+        "effect": {
+          "type": "string",
+          "enum": ["allow", "require_approval", "deny"]
+        },
+        "obligations": { "$ref": "#/$defs/obligations" }
+      }
+    },
+
+    "obligations": {
+      "type": "object",
+      "description": "Merged across all matched rules: permissions intersect, restrictions union. A rule can only narrow what another rule permits.",
+      "additionalProperties": false,
+      "properties": {
+        "approver_role": {
+          "type": "string",
+          "description": "Required when the resolved effect is require_approval. The most restrictive role among matched rules is used."
+        },
+        "agent_role": { "$ref": "#/$defs/agent_role" },
+        "allowed_data_sources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Intersected across matched rules."
+        },
+        "restricted_actions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Unioned across matched rules. Enforced by the persona binder as execution-time restrictions, not prompt instructions."
+        },
+        "output_target": {
+          "type": "string",
+          "description": "Destination for approved output. The knowledge writer may not write elsewhere."
+        },
+        "output_review_required": { "type": "boolean" },
+        "documentation_required": { "type": "boolean" },
+        "audit_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auditing is unconditional in this design; the field exists to make the requirement explicit in policy, not to disable it."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paios.dev/schemas/agent-policy.schema.json",
+  "title": "PAIOS Agent Policy",
+  "description": "Ownership, boundaries, and lifecycle for a single governed agent. Enforced by the persona binder at execution time.",
+  "type": "object",
+  "required": [
+    "agent_name",
+    "purpose",
+    "owner",
+    "allowed_users",
+    "allowed_data_sources",
+    "review_cycle"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "agent_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "purpose": {
+      "type": "string",
+      "description": "Statement of what the agent exists to do. Requests outside this purpose are out of scope for the agent regardless of the requester's entitlements."
+    },
+    "owner": {
+      "type": "string",
+      "description": "Accountable team or role. An agent without an owner cannot be governed and must not be routable."
+    },
+    "allowed_users": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Roles permitted to route work to this agent."
+    },
+    "allowed_data_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Sources the agent may read. Intersected with the decision obligations at bind time; the narrower set wins."
+    },
+    "allowed_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "restricted_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions the agent may never perform. Unioned with the decision obligations; a restriction here cannot be lifted by a rule."
+    },
+    "approval_required_for": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions that require human approval even when the request's risk level would otherwise permit execution."
+    },
+    "output_target": { "type": "string" },
+    "audit_required": { "type": "boolean", "default": true },
+    "review_cycle": {
+      "type": "string",
+      "enum": ["monthly", "quarterly", "semiannual", "annual"],
+      "description": "How often the owner must re-attest to this policy."
+    },
+    "retirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["active", "deprecated", "retired"],
+          "default": "active"
+        },
+        "retired_at": { "type": "string", "format": "date-time" },
+        "successor_agent": { "type": "string" }
+      },
+      "description": "A retired agent stops being routable but its audit history remains; retirement is a state change, not a deletion."
+    }
+  }
+}

@@ -21,6 +21,12 @@ Explores integration concepts involving Microsoft 365, SharePoint, Teams, Power 
 **Governance Workflow Examples**
 Provides examples of governance processes, review mechanisms, and human-in-the-loop operational models.
 
+## System Design
+
+The documents in this directory describe the governance model and what it is intended to control.
+
+The corresponding technical design — component decomposition, request lifecycle, policy evaluation semantics, data model, and failure modes — is specified in [`../architecture/DESIGN.md`](../architecture/DESIGN.md), with the structural decisions behind it recorded in [`../architecture/decisions/`](../architecture/decisions/).
+
 ## Intended Audience
 
 This documentation is intended for:

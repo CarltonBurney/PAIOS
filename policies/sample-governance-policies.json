@@ -1,26 +1,143 @@
 {
-  "policySetName": "PAIOS AI Governance Policies v1.0",
-  "description": "I designed this policy set to capture approval, accountability, and audit controls for AI operations.",
-  "policies": [
+  "$schema": "./schemas/policy-bundle.schema.json",
+  "bundle_version": "1.0.0",
+  "name": "PAIOS AI Governance Policies v1.0",
+  "description": "Sample policy bundle demonstrating classification, approval, and audit controls for AI operations. Illustrative content, not tenant policy.",
+  "published_at": "2026-01-01T00:00:00Z",
+
+  "classification": {
+    "confidence_threshold": 0.75,
+    "deterministic_rules": [
+      {
+        "rule_id": "CL-001",
+        "description": "Any modification to governance rules, policy bundles, or agent policies.",
+        "match_patterns": ["policy", "governance rule", "approval threshold", "agent policy"],
+        "request_type": "governance_change"
+      },
+      {
+        "rule_id": "CL-002",
+        "description": "Access and account changes carry a security signal regardless of phrasing.",
+        "match_patterns": ["reset password", "grant access", "disable account", "firewall", "permission"],
+        "request_type": "technical",
+        "sensitivity_signals": ["access_modification", "credential_access"]
+      },
+      {
+        "rule_id": "CL-003",
+        "description": "Client-facing or externally distributed material.",
+        "match_patterns": ["client-facing", "send to customer", "external", "publish externally"],
+        "request_type": "core",
+        "sensitivity_signals": ["external_communication", "client_data"]
+      },
+      {
+        "rule_id": "CL-004",
+        "description": "Routine internal documentation and knowledge base drafting.",
+        "match_patterns": ["how-to", "troubleshooting guide", "knowledge base article", "internal sop"],
+        "request_type": "core"
+      }
+    ]
+  },
+
+  "decision_rules": [
     {
-      "id": "PS-001",
-      "name": "Request Classification",
-      "summary": "I defined classification criteria for AI service requests and escalation paths.",
-      "controls": [
-        "Classify requests by intent and sensitivity",
-        "Require human review for high-risk operations",
-        "Log classification decisions for audit"
-      ]
+      "rule_id": "PS-001",
+      "description": "Routine internal documentation executes without approval, with logging.",
+      "match": {
+        "request_type": ["core", "logical", "project"],
+        "risk_level": ["low", "standard"]
+      },
+      "effect": "allow",
+      "obligations": {
+        "agent_role": "documentation_agent",
+        "allowed_data_sources": ["sharepoint_knowledge_base", "internal_process_library"],
+        "output_target": "sharepoint_knowledge_base",
+        "audit_required": true
+      }
     },
     {
-      "id": "PS-002",
-      "name": "Approval Workflow",
-      "summary": "I defined an approval workflow that ensures accountability for AI-driven decisions.",
-      "controls": [
-        "Require explicit approval for privileged workflows",
-        "Document approver identity and timestamp",
-        "Enforce rollback and audit traceability"
-      ]
+      "rule_id": "PS-002",
+      "description": "Sensitive and compliance-relevant work requires human review before execution.",
+      "match": {
+        "risk_level": ["sensitive", "compliance"]
+      },
+      "effect": "require_approval",
+      "obligations": {
+        "approver_role": "governance_reviewer",
+        "output_review_required": true,
+        "documentation_required": true,
+        "audit_required": true
+      }
+    },
+    {
+      "rule_id": "PS-003",
+      "description": "Security-classified requests require administrator approval and may not perform privileged actions directly.",
+      "match": {
+        "risk_level": ["security"]
+      },
+      "effect": "require_approval",
+      "obligations": {
+        "approver_role": "security_administrator",
+        "restricted_actions": ["disable_accounts", "change_firewall_rules", "delete_logs"],
+        "output_review_required": true,
+        "audit_required": true
+      }
+    },
+    {
+      "rule_id": "PS-004",
+      "description": "Changes to governance itself are always reviewed, at any risk level.",
+      "match": {
+        "request_type": ["governance_change"]
+      },
+      "effect": "require_approval",
+      "obligations": {
+        "approver_role": "governance_owner",
+        "documentation_required": true,
+        "audit_required": true
+      }
+    },
+    {
+      "rule_id": "PS-005",
+      "description": "Unclassified requests are never executed on an assumption of safety.",
+      "match": {
+        "request_type": ["unclassified"]
+      },
+      "effect": "require_approval",
+      "obligations": {
+        "approver_role": "governance_reviewer",
+        "output_review_required": true
+      }
+    }
+  ],
+
+  "approval": {
+    "timeout_minutes": 480,
+    "escalation_role": "governance_owner"
+  },
+
+  "agent_policies": [
+    {
+      "agent_name": "documentation_agent",
+      "purpose": "Draft internal and client-facing documentation from operational knowledge.",
+      "owner": "service_desk_team",
+      "allowed_users": ["support_technician", "service_desk_manager"],
+      "allowed_data_sources": ["sharepoint_knowledge_base", "internal_process_library"],
+      "allowed_actions": ["draft_document", "summarize_ticket", "format_procedure"],
+      "restricted_actions": ["send_external_email", "modify_knowledge_base_permissions"],
+      "approval_required_for": ["client_facing_publication"],
+      "output_target": "sharepoint_knowledge_base",
+      "audit_required": true,
+      "review_cycle": "quarterly"
+    },
+    {
+      "agent_name": "security_operations_agent",
+      "purpose": "Summarize security incidents and draft remediation recommendations for analyst review.",
+      "owner": "security_team",
+      "allowed_users": ["security_analyst", "security_manager"],
+      "allowed_data_sources": ["approved_security_logs", "incident_knowledge_base"],
+      "allowed_actions": ["summarize_incident", "draft_recommendation"],
+      "restricted_actions": ["disable_accounts", "change_firewall_rules", "delete_logs"],
+      "approval_required_for": ["incident_summary_external", "remediation_recommendation"],
+      "audit_required": true,
+      "review_cycle": "quarterly"
     }
   ]
 }
