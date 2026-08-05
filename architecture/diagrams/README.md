@@ -10,5 +10,6 @@ Diagram categories include:
 - Human-in-the-Loop Processes
 - Microsoft 365 Integration
 - Workflow Orchestration
+- Applied Use Case Architectures
 
 The diagrams are intended to provide visual context for the concepts described throughout the repository documentation.

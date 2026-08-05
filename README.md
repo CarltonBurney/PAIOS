@@ -31,6 +31,13 @@ Sample governance policies and control definitions.
 **src/**
 Reference implementation materials and supporting assets.
 
+## Applied Use Cases
+
+**Deal Intelligence Pipeline**
+A private real estate investment application of the control plane, describing how market intelligence, property evaluation, institutional knowledge, risk scoring, scenario modeling, and investment committee support operate under governance controls that keep judgment and capital allocation with investment professionals.
+
+See [Deal Intelligence Pipeline](docs/DEAL_INTELLIGENCE_PIPELINE.md) and [Deal Scoring and Model Governance](docs/DEAL_SCORING_AND_MODEL_GOVERNANCE.md).
+
 ## Project Scope
 
 PAIOS is intended as a governance-oriented framework for exploring responsible AI adoption, operational control, workflow orchestration, and organizational knowledge management.

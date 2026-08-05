@@ -10,5 +10,6 @@ Workflow examples may include:
 - Workflow Automation
 - Escalation Paths
 - Governance Review Cycles
+- Applied Use Case Workflows
 
 These workflows are intended to illustrate operational behavior rather than implementation-specific logic.

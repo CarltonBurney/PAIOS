@@ -1,0 +1,139 @@
+{
+  "policySetName": "Deal Intelligence Governance Policies v1.0",
+  "description": "I defined this policy set to govern AI-assisted investment intelligence, establishing that the system produces analysis while investment professionals retain judgment, capital allocation, and decision authority.",
+  "appliesTo": "Deal Intelligence Pipeline — private real estate acquisition screening, underwriting support, and investment committee preparation",
+  "policies": [
+    {
+      "id": "DI-001",
+      "name": "Human Decision Authority",
+      "summary": "I established that no AI output constitutes an investment decision and that decision authority remains with named individuals.",
+      "controls": [
+        "Prohibit autonomous rejection of any opportunity from the pipeline",
+        "Require a named human reviewer for every decline at screening",
+        "Reserve capital allocation authority to the investment committee",
+        "Present all scores as decision support rather than recommendation"
+      ]
+    },
+    {
+      "id": "DI-002",
+      "name": "Score Traceability",
+      "summary": "I required that any score presented to a human resolve to the inputs, sources, and weights that produced it.",
+      "controls": [
+        "Record data source and vintage for every scoring input",
+        "Display the dimension profile alongside any composite score",
+        "Attach a confidence indicator derived from input completeness and provenance",
+        "Record defaults and proxies used to fill data gaps"
+      ]
+    },
+    {
+      "id": "DI-003",
+      "name": "Model Change Control",
+      "summary": "I classified scoring model changes as governance changes requiring approval before deployment.",
+      "controls": [
+        "Version every model with weights, inputs, and effective date",
+        "Require documented rationale and human approval for weight or logic changes",
+        "Require independent review of model logic before deployment",
+        "Retain prior versions so historical scores remain reproducible"
+      ]
+    },
+    {
+      "id": "DI-004",
+      "name": "Extraction Verification",
+      "summary": "I defined extracted document values as unverified until confirmed by a reviewer.",
+      "controls": [
+        "Link every extracted field to its source document and page",
+        "Flag low-confidence extractions for human verification before scoring",
+        "Carry verification status on any figure reaching an investment committee package",
+        "Prohibit silent use of unverified values in committee materials"
+      ]
+    },
+    {
+      "id": "DI-005",
+      "name": "Committee Material Approval",
+      "summary": "I required human review and approval before any AI-assisted briefing reaches the investment committee.",
+      "controls": [
+        "Require a named analyst to review and approve each briefing before distribution",
+        "Label all AI-assisted material as AI-assisted",
+        "Retain inputs, model versions, and scenario definitions with each briefing",
+        "Ensure any briefing can be regenerated exactly as the committee received it"
+      ]
+    },
+    {
+      "id": "DI-006",
+      "name": "Override Capture",
+      "summary": "I required that human decisions diverging from model output be recorded, treating divergence as a governance signal rather than an exception to suppress.",
+      "controls": [
+        "Record rationale for every decision that diverges from model output",
+        "Review overrides quarterly for systematic divergence",
+        "Treat consistent one-directional divergence as a model calibration finding",
+        "Escalate unstated criteria surfaced by overrides to the calibration review"
+      ]
+    },
+    {
+      "id": "DI-007",
+      "name": "Decline Record Retention",
+      "summary": "I required declined opportunities to be retained with rationale so that screening consistency and false negative exposure remain observable.",
+      "controls": [
+        "Record rationale, dimension scores, and reviewer for every decline",
+        "Review declines periodically for systematic bias by market, asset type, or partner",
+        "Sample low-ranked opportunities to test whether ranking suppresses viable deals",
+        "Retain decline records as part of the institutional knowledge base"
+      ]
+    },
+    {
+      "id": "DI-008",
+      "name": "Model Scope Limitation",
+      "summary": "I limited each model to the opportunity types it was calibrated for and defined out-of-scope application as a governance exception.",
+      "controls": [
+        "Document the asset types and business plans each model covers",
+        "Document known limitations and inapplicable conditions with the model",
+        "Require approval before applying a model outside its documented scope",
+        "Review scope and limitations on an annual cycle"
+      ]
+    },
+    {
+      "id": "DI-009",
+      "name": "Data Sensitivity and Access",
+      "summary": "I applied elevated sensitivity classification to internal performance data, partner performance detail, and investor information.",
+      "controls": [
+        "Enforce existing entitlement boundaries on internal investment records",
+        "Restrict partner-level performance detail to authorized reviewers",
+        "Classify opportunity data received under confidentiality accordingly",
+        "Log access to sensitive investment data for audit"
+      ]
+    },
+    {
+      "id": "DI-010",
+      "name": "Model Monitoring and Calibration",
+      "summary": "I defined a monitoring and calibration cycle bounded by the limited outcome data a low-acquisition-rate strategy produces.",
+      "controls": [
+        "Monitor input and score distribution drift on a quarterly cycle",
+        "Backtest model behavior against realized outcomes annually",
+        "Prohibit weight changes justified by statistically insufficient outcome data",
+        "Require documented rationale rather than fit improvement alone for calibration changes"
+      ]
+    },
+    {
+      "id": "DI-011",
+      "name": "Claim Boundaries",
+      "summary": "I defined the claims this system may make about its own capability, to prevent representations the evidence cannot support.",
+      "controls": [
+        "Prohibit representation of model output as return prediction",
+        "Prohibit representation of the system as a substitute for underwriting judgment",
+        "Limit stated capability to consistency, capacity, pattern detection, and preparation efficiency",
+        "Exclude investment performance from system evaluation metrics"
+      ]
+    },
+    {
+      "id": "DI-012",
+      "name": "No Autonomous Action",
+      "summary": "I prohibited the system from taking any action beyond producing analysis.",
+      "controls": [
+        "Prohibit transaction execution and capital commitment",
+        "Prohibit external communication to sellers, brokers, or partners without human approval",
+        "Prohibit modification of underwriting models or portfolio records without approval",
+        "Restrict system output to analysis delivered to human reviewers"
+      ]
+    }
+  ]
+}

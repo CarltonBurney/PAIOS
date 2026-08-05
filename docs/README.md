@@ -21,6 +21,12 @@ Explores integration concepts involving Microsoft 365, SharePoint, Teams, Power 
 **Governance Workflow Examples**
 Provides examples of governance processes, review mechanisms, and human-in-the-loop operational models.
 
+**Deal Intelligence Pipeline**
+An applied use case placing the control plane in a private real estate investment context, covering acquisition screening, risk scoring, scenario modeling, and investment committee support under human decision authority.
+
+**Deal Scoring and Model Governance**
+Describes how opportunity scoring is constructed, calibrated, and governed, including model risk controls, failure modes, and the boundaries that keep scoring a decision support function.
+
 ## Intended Audience
 
 This documentation is intended for:
