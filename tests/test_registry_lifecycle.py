@@ -12,7 +12,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from paios import Identity, InMemoryAuditSink, PolicyDecision
+from paios import (
+    Approval,
+    ApprovalState,
+    Identity,
+    InMemoryAuditSink,
+    PolicyDecision,
+)
 from paios.audit import AuditTrail
 from paios.execution import (
     ExecutionGateway,
@@ -72,7 +78,13 @@ def registry() -> ToolRegistry:
     return reg
 
 
-def gateway_for(registry: ToolRegistry, environment: str = "prod") -> ExecutionGateway:
+# Registry mutations are governed. Non-production promotion is auto-allowed;
+# production promotion requires a real approval from a different principal.
+ADMIN = frozenset({"registry_admin", "platform_admin"})
+APPROVED_BY_BOSS = Approval(state=ApprovalState.APPROVED, approver="boss@contoso.com")
+
+
+def gateway_for(registry: ToolRegistry, environment: str = "test") -> ExecutionGateway:
     return ExecutionGateway(
         registry,
         StaticHandlerResolver({"sample_tool": lambda args: {"ran": True}}),
@@ -143,9 +155,10 @@ class TestPromotion:
             source_environment="dev",
             target_environment="prod",
             requested_by="alice",
-            approved_by="boss",
+            approved_by="boss@contoso.com",
+            principal_roles=ADMIN,
         )
-        result = gateway_for(registry).execute(
+        result = gateway_for(registry, "prod").execute(
             principal=principal(), tool_id="sample_tool", governance_context=ALLOW
         )
         assert result.allowed
@@ -159,12 +172,13 @@ class TestPromotion:
             source_environment="test",
             target_environment="prod",
             requested_by="alice",
-            approved_by="boss",
+            approved_by="boss@contoso.com",
+            principal_roles=ADMIN,
             trace_id="trace-123",
         )
         record = registry.service.promotions[-1]
         assert record.target_environment == "prod"
-        assert record.approved_by == "boss"
+        assert record.approved_by == "boss@contoso.com"
         assert record.trace_id == "trace-123"
 
         events = [
@@ -205,7 +219,7 @@ class TestSuspension:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
 
@@ -229,7 +243,9 @@ class TestSuspension:
         """Required test 6."""
         self._active(registry)
         registry.service.suspend("sample_tool", principal="alice")
-        registry.service.resume("sample_tool", principal="alice")
+        registry.service.resume(
+            "sample_tool", principal="alice", principal_roles=ADMIN
+        )
 
         result = gateway_for(registry).execute(
             principal=principal(), tool_id="sample_tool", governance_context=ALLOW
@@ -248,7 +264,9 @@ class TestSuspension:
     def test_cannot_resume_something_never_suspended(self, registry):
         self._active(registry)
         with pytest.raises(RegistryError, match="cannot resume"):
-            registry.service.resume("sample_tool", principal="alice")
+            registry.service.resume(
+                "sample_tool", principal="alice", principal_roles=ADMIN
+            )
 
 
 class TestDeprecation:
@@ -257,7 +275,7 @@ class TestDeprecation:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
 
@@ -307,7 +325,7 @@ class TestRetirement:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         registry.service.retire("sample_tool", principal="alice")
@@ -347,7 +365,7 @@ class TestVersioning:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         registry.service.create_version(
@@ -385,7 +403,7 @@ class TestVersioning:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         created = registry.service.create_version(
@@ -406,6 +424,7 @@ class TestOwnership:
             Owner(OwnerType.USER, "carlton@contoso.com"),
             principal="alice",
             approval_reference="APPROVAL-77",
+            approval=APPROVED_BY_BOSS,
         )
         assert registry.get("sample_tool").owner == "carlton@contoso.com"
 
@@ -455,7 +474,7 @@ class TestRegistryStateIsNotAuthorization:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         active = registry.get("sample_tool")
@@ -479,7 +498,7 @@ class TestRegistryStateIsNotAuthorization:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         from paios.models import PolicyOutcome
@@ -502,13 +521,13 @@ class TestLifecycleAuditCompleteness:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         svc.suspend("sample_tool", principal="alice")
-        svc.resume("sample_tool", principal="alice")
+        svc.resume("sample_tool", principal="alice", principal_roles=ADMIN)
         svc.deprecate("sample_tool", principal="alice")
-        svc.retire("sample_tool", principal="alice")
+        svc.retire("sample_tool", principal="alice", principal_roles=ADMIN)
 
         operations = [e.operation for e in svc.events_for("sample_tool")]
         for expected in (
@@ -546,7 +565,7 @@ class TestLifecycleAuditCompleteness:
             "sample_tool",
             "1.0.0",
             source_environment="dev",
-            target_environment="prod",
+            target_environment="test",
             requested_by="alice",
         )
         sink = InMemoryAuditSink()

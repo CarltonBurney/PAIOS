@@ -166,6 +166,14 @@ class PolicyConditions:
     principal_roles: SetPredicate = field(default_factory=SetPredicate)
     principal_groups: SetPredicate = field(default_factory=SetPredicate)
 
+    # Generalized attribute predicates. Any `<name>_any_of` / `_all_of` /
+    # `_none_of` key that is not one of the families above becomes an entry
+    # here, so new decision dimensions (registry_operation, target_environment,
+    # data_classification, …) need no schema change. An attribute condition
+    # whose candidate set the caller does not supply does NOT match — a
+    # condition we cannot evaluate must never silently pass.
+    attributes: dict[str, SetPredicate] = field(default_factory=dict)
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> PolicyConditions:
         risk_level = SetPredicate.from_conditions(
@@ -181,12 +189,31 @@ class PolicyConditions:
         _validate_members(risk_domains, RiskDomain, "risk_domains")
         _validate_members(request_types, RequestType, "request_types")
 
+        known = {
+            "risk_level",
+            "risk_domains",
+            "request_types",
+            "principal_roles",
+            "principal_groups",
+        }
+        attribute_names: set[str] = set()
+        for key in raw:
+            for suffix in ("_any_of", "_all_of", "_none_of"):
+                if key.endswith(suffix):
+                    base = key[: -len(suffix)]
+                    if base not in known:
+                        attribute_names.add(base)
+
         return cls(
             risk_level=risk_level,
             risk_domains=risk_domains,
             request_types=request_types,
             principal_roles=SetPredicate.from_conditions(raw, "principal_roles"),
             principal_groups=SetPredicate.from_conditions(raw, "principal_groups"),
+            attributes={
+                name: SetPredicate.from_conditions(raw, name)
+                for name in sorted(attribute_names)
+            },
         )
 
     def matches(
@@ -194,6 +221,7 @@ class PolicyConditions:
         risk: RiskAssessment,
         classification: Classification | None = None,
         identity: Identity | None = None,
+        attributes: dict[str, frozenset[str]] | None = None,
     ) -> bool:
         if not self.risk_level.matches(frozenset({risk.level.value})):
             return False
@@ -217,6 +245,13 @@ class PolicyConditions:
             if identity is None:
                 return False
             if not self.principal_groups.matches(frozenset(identity.groups)):
+                return False
+
+        for name, predicate in self.attributes.items():
+            candidate = (attributes or {}).get(name)
+            if candidate is None:
+                return False
+            if not predicate.matches(candidate):
                 return False
 
         return True
@@ -331,6 +366,7 @@ class PolicyEngine:
         *,
         agent: Agent | None = None,
         environment: str | None = None,
+        attributes: dict[str, frozenset[str]] | None = None,
     ) -> PolicyDecision:
         department = _department_of(request.identity)
         agent_name = agent.value if agent else None
@@ -355,7 +391,7 @@ class PolicyEngine:
             ):
                 continue
             if not policy.conditions.matches(
-                risk, classification, request.identity
+                risk, classification, request.identity, attributes
             ):
                 continue
 

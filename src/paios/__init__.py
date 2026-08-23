@@ -52,9 +52,12 @@ from .policy import (
 from .registry import (
     ExecutionAvailability,
     GovernedResourceMetadata,
+    MutationContext,
+    MutationVerdict,
     Owner,
     OwnerType,
     PromotionRecord,
+    RegistryDenied,
     RegistryError,
     RegistryEvent,
     RegistryOperation,
@@ -64,6 +67,7 @@ from .registry import (
     Version,
     VersionBump,
 )
+from .registry_governance import RegistryGovernance
 from .risk import RiskEngine, RiskModel
 from .routing import Router, authorize, candidate_agent
 from .tools import (
@@ -101,6 +105,8 @@ __all__ = [
     "InMemoryAuditSink",
     "JsonlAuditSink",
     "ModelAssistedClassifier",
+    "MutationContext",
+    "MutationVerdict",
     "OperationType",
     "Outcome",
     "Owner",
@@ -116,8 +122,10 @@ __all__ = [
     "PolicyViolation",
     "Principal",
     "PromotionRecord",
+    "RegistryDenied",
     "RegistryError",
     "RegistryEvent",
+    "RegistryGovernance",
     "RegistryOperation",
     "RegistryService",
     "RegistryType",

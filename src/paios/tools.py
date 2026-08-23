@@ -280,29 +280,54 @@ class ToolRegistry:
     agent produced.
     """
 
-    def __init__(self, tools: tuple[ToolDefinition, ...] = ()) -> None:
+    def __init__(
+        self,
+        tools: tuple[ToolDefinition, ...] = (),
+        *,
+        governor: Any | None = None,
+        governed: bool = True,
+    ) -> None:
+        """Governed by default.
+
+        `governed=False` yields an ungoverned registry -- audited but not
+        policy-gated. Useful for fixtures and migration tooling; not a
+        supported production configuration.
+        """
+        if governor is None and governed:
+            from .config import DEFAULT_REGISTRY_POLICY_PATH
+            from .registry_governance import RegistryGovernance
+
+            governor = RegistryGovernance.from_file(DEFAULT_REGISTRY_POLICY_PATH)
+
         self.service = RegistryService(
-            RegistryType.TOOL, validators=(validate_tool,)
+            RegistryType.TOOL, validators=(validate_tool,), governor=governor
         )
         for tool in tools:
             if self.service.get(tool.tool_id, tool.version) is not None:
                 raise ToolRegistryError(
                     f"duplicate tool_id in registry: {tool.tool_id}"
                 )
-            self.service.register(tool, principal="bootstrap")
+            self.service.register(
+                tool,
+                principal="bootstrap",
+                principal_roles=frozenset({"platform_admin", "registry_admin"}),
+                reason="registry bootstrap from document",
+            )
 
     @classmethod
-    def from_file(cls, path: str | Path) -> ToolRegistry:
+    def from_file(cls, path: str | Path, *, governed: bool = True) -> ToolRegistry:
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ToolRegistryError(
                 f"cannot read tool registry at {path}: {exc}"
             ) from exc
-        return cls.from_dict(data)
+        return cls.from_dict(data, governed=governed)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ToolRegistry:
+    def from_dict(
+        cls, data: dict[str, Any], *, governed: bool = True
+    ) -> ToolRegistry:
         raw = data.get("tools")
         if not isinstance(raw, list):
             raise ToolRegistryError("tool registry must contain a 'tools' array")
@@ -317,7 +342,9 @@ class ToolRegistry:
             if tool_id is not None:
                 seen.add(tool_id)
 
-        return cls(tuple(ToolDefinition.from_dict(t) for t in raw))
+        return cls(
+            tuple(ToolDefinition.from_dict(t) for t in raw), governed=governed
+        )
 
     # -- read ----------------------------------------------------------------
 

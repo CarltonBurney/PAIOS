@@ -305,6 +305,8 @@ src/paios/
 tests/
   audit.py             append-only audit trail, correlation IDs
   tools.py             Tool Registry
+  registry.py          governed registry substrate
+  registry_governance.py  policy-governed mutations (§3B)
   execution.py         Execution Gateway (enforcement boundary)
   control_plane.py     the pipeline
   config.py            environment configuration
@@ -313,10 +315,12 @@ tests/
   test_control_plane.py      pipeline
   test_policy_decisions.py   precedence + domain matching
   test_execution_gateway.py  registry + enforcement
-                             87 tests total, all passing
+  test_registry_lifecycle.py lifecycle substrate
+  test_registry_governance.py governed mutations (§3B)
+                             144 tests total, all passing
 ```
 
-Verified state: `ruff check` clean, `pytest` 87/87 passing on Python 3.11
+Verified state: `ruff check` clean, `pytest` 144/144 passing on Python 3.11
 (package targets 3.12+).
 
 ### 3.1 How to treat it
@@ -444,16 +448,93 @@ audited, requiring no version change.
 An administrative workflow designed for privileged access is modeled
 separately. The general assistant is never taught to bypass an L4 decision.
 
-### Registry approval integration — open
+### Registry approval integration — **IMPLEMENTED (§3B)**
 
-Registry changes may themselves be governed: development registration possibly
-automatic, production promotion requiring approval, ownership transfer
-requiring approval, retirement of a production resource requiring approval. The
-service already carries `approved_by` and `approval_reference` through
-promotion and ownership transfer, but does **not yet call the policy engine**
-to decide whether an approval was required. Wiring the registry into the
-existing policy/approval architecture — rather than bypassing it — is
-outstanding.
+See §3C below.
+
+
+---
+
+## 3C. §3B — Policy-governed registry mutations — **IMPLEMENTED**
+
+Auditing a lifecycle change is not governing it. Registry mutations are now
+evaluated by the same policy engine, decision enum, and precedence as execution
+requests. `RegistryService` performs a state transition **only after an allowing
+verdict**.
+
+### How it fits together
+
+`registry.py` defines the contract only — `MutationContext`, `MutationVerdict`,
+and a `MutationGovernor` protocol — so the registry never imports the policy
+engine. `registry_governance.py` owns that dependency and implements the
+governor. The two stay independently testable.
+
+Governed operations: `register`, `create_version`, `validate`, `promote`,
+`deprecate`, `retire`, `suspend`, `resume`, `transfer_ownership`.
+
+`MutationContext` carries everything §3B requires: authoritative principal
+identity and roles, target environment, the resource's own environments, status
+and risk, reason, trace ID, and approval state.
+
+### Default policy set — `policies/registry-policies.json`
+
+| Policy | Condition | Decision |
+|---|---|---|
+| `REG-ELEVATED-001` | promote + prod + L4 + lacks elevated role | **deny** |
+| `REG-ELEVATED-002` | retire + resource in prod + lacks elevated role | **deny** |
+| `REG-PROMOTE-PROD-001` | promote + prod | require_approval |
+| `REG-OWNERSHIP-001` | transfer_ownership | require_approval |
+| `REG-RETIRE-PROD-001` | retire + resource in prod | require_approval |
+| `REG-CAPABILITY-001` | create_version + L4 | require_approval |
+| `REG-SUSPEND-001` | suspend | allow_with_controls |
+| `REG-RESUME-001` | resume + lacks elevated role | require_approval |
+| `REG-BASE-001` | — | allow |
+
+Suspension is deliberately `allow_with_controls` rather than approval-gated: an
+emergency stop that requires a second signature is not an emergency stop. Resume
+is the gated direction.
+
+### Separation of duties
+
+Enforced after policy, in the governor: where a mutation requires approval, the
+requester and approver may not be the same principal. Self-approval is converted
+to a `deny` with `SEPARATION_OF_DUTIES`. A policy demanding approval is
+satisfied by a real second party or not at all.
+
+### Refusals are audited
+
+A denied mutation emits a `RegistryEvent` with `previous_state == new_state`,
+carrying the trace ID and target environment. A refused change is as much a
+governance record as a successful one.
+
+### Generalized attribute predicates
+
+Registry conditions needed dimensions the policy schema did not have. Rather
+than adding bespoke fields, `PolicyConditions` now carries an open
+`attributes` map: any `<name>_any_of` / `_all_of` / `_none_of` key that is not a
+known family becomes an attribute predicate. `registry_operation`,
+`registry_type`, `target_environment`, `resource_environments`, and
+`resource_status` use it, and future dimensions (data classification, network
+destination) need no schema change.
+
+**Safety property:** an attribute condition whose candidate set the caller does
+not supply does **not** match. A condition that cannot be evaluated must never
+silently pass.
+
+### Behaviour change
+
+`ToolRegistry` is **governed by default**. Production promotion, ownership
+transfer, and production retirement now require approval where they previously
+only recorded an approver string. `ToolRegistry(governed=False)` yields the old
+audited-but-ungoverned behaviour for fixtures and migration tooling; it is not a
+supported production configuration, and its verdicts read `ungoverned` rather
+than `allow` so the audit trail distinguishes "policy permitted this" from
+"nothing evaluated it".
+
+### Registry state still does not authorize execution
+
+Unchanged and still tested. Governing *how a resource reaches active* is a
+separate question from *whether this principal may invoke it*.
 
 
 ---
@@ -516,6 +597,20 @@ authentication uses `DefaultAzureCredential` (managed identity in Azure,
 9. **Next slice:** Agent, Model, and Workflow registries. The substrate is
    stable enough to build all three in parallel — each is a `*Spec` composed
    with `GovernedResourceMetadata` plus a facade over `RegistryService`.
-10. Registry approval integration (§3B) — the registry does not yet consult
-    the policy engine about whether a lifecycle change itself needs approval.
+10. ~~Registry approval integration~~ — **implemented** (§3C).
 11. Break-glass control plane (§3B) — specified, deliberately not built.
+12. **Reconciliation follow-ups** from the `Notepad_data` review, none of which
+    are code changes yet:
+    - Which Azure retrieval stack for production (AI Search vs pgvector) — ADR.
+    - Data regions, retention, legal holds, tenant isolation model.
+    - One internal tenant plane plus isolated customer deployments, vs a
+      multi-tenant SaaS control plane. These are different architectures and
+      should not be blurred.
+    - Approved production workflow engines; the Power Platform / code boundary.
+    - Whether any legacy `enabled:false` tool IDs were meant to be *suspended*
+      rather than retired. The migration chose `retired`, which burns the
+      identifier — genuinely temporary cases need re-registering under
+      reviewed new IDs.
+    - Policies and expiry windows that may grant `permits_deprecated` during
+      named migration workflows. No policy currently sets it, so deprecated
+      resources are effectively off.

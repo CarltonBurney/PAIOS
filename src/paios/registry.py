@@ -32,7 +32,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 
 def _now() -> datetime:
@@ -41,6 +41,18 @@ def _now() -> datetime:
 
 class RegistryError(RuntimeError):
     """Raised when a lifecycle operation is not permitted."""
+
+
+class RegistryDenied(RegistryError):
+    """Raised when governance refuses a proposed lifecycle mutation.
+
+    Distinct from RegistryError: the operation was structurally valid but
+    policy, approval, or separation of duties refused it.
+    """
+
+    def __init__(self, verdict: MutationVerdict) -> None:
+        super().__init__(verdict.detail or "registry mutation denied")
+        self.verdict = verdict
 
 
 class RegistryType(str, Enum):
@@ -220,6 +232,77 @@ class RegistryEvent:
 
 
 @dataclass(frozen=True)
+class MutationContext:
+    """A proposed lifecycle mutation, as governance sees it.
+
+    Carries everything §3B requires: authoritative principal identity, target
+    environment, reason, trace ID, and approval state. Registry state
+    transitions happen only after a governor returns an allowing verdict.
+    """
+
+    registry_type: RegistryType
+    resource_id: str
+    version: Version
+    operation: RegistryOperation
+    principal: str
+    principal_roles: frozenset[str] = frozenset()
+    principal_groups: frozenset[str] = frozenset()
+    target_environment: str | None = None
+    resource_environments: frozenset[str] = frozenset()
+    resource_status: ResourceStatus | None = None
+    resource_risk_level: str | None = None
+    resource_risk_domains: frozenset[str] = frozenset()
+    reason: str = ""
+    trace_id: str = ""
+    approver: str | None = None
+    approval_granted: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "registry_type": self.registry_type.value,
+            "resource_id": self.resource_id,
+            "version": str(self.version),
+            "operation": self.operation.value,
+            "principal": self.principal,
+            "target_environment": self.target_environment,
+            "reason": self.reason,
+            "trace_id": self.trace_id,
+            "approver": self.approver,
+            "approval_granted": self.approval_granted,
+        }
+
+
+@dataclass(frozen=True)
+class MutationVerdict:
+    """Governance's answer. Only `allowed` may permit a state transition."""
+
+    allowed: bool
+    decision: str = "allow"
+    matched: tuple[str, ...] = ()
+    reason_codes: tuple[str, ...] = ()
+    detail: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "governance_allowed": self.allowed,
+            "governance_decision": self.decision,
+            "governance_matched": list(self.matched),
+            "governance_reason_codes": list(self.reason_codes),
+        }
+
+
+class MutationGovernor(Protocol):
+    """Decides whether a proposed registry mutation may proceed.
+
+    Implemented in `registry_governance`, which owns the policy dependency.
+    Keeping it a protocol here means the registry never imports the policy
+    engine, so the two remain independently testable.
+    """
+
+    def evaluate(self, context: MutationContext) -> MutationVerdict: ...
+
+
+@dataclass(frozen=True)
 class GovernedResourceMetadata:
     """Governance identity shared by every registry resource.
 
@@ -342,6 +425,27 @@ class GovernedResource:
 Validator = Callable[["GovernedResource"], list[str]]
 
 
+class _ApprovalShim:
+    """Adapts a bare approver string to the approval shape governance reads.
+
+    Lets existing call sites keep passing ``approved_by="boss"`` while the
+    governor sees a granted approval by that principal.
+    """
+
+    __slots__ = ("approver", "state")
+
+    def __init__(self, approver: str | None) -> None:
+        self.approver = approver
+        self.state = _GRANTED if approver else None
+
+
+class _GrantedState:
+    value = "approved"
+
+
+_GRANTED = _GrantedState()
+
+
 class RegistryService:
     """Common lifecycle for every governed registry.
 
@@ -358,13 +462,89 @@ class RegistryService:
         self,
         registry_type: RegistryType,
         validators: tuple[Validator, ...] = (),
+        governor: MutationGovernor | None = None,
     ) -> None:
         self.registry_type = registry_type
         self._validators = validators
+        self._governor = governor
         self._resources: dict[tuple[str, str], GovernedResource] = {}
         self._retired_ids: set[str] = set()
         self._events: list[RegistryEvent] = []
         self._promotions: list[PromotionRecord] = []
+
+    # -- governance ----------------------------------------------------------
+
+    def _govern(
+        self,
+        resource: GovernedResource,
+        operation: RegistryOperation,
+        principal: str,
+        *,
+        principal_roles: frozenset[str] = frozenset(),
+        principal_groups: frozenset[str] = frozenset(),
+        target_environment: str | None = None,
+        reason: str = "",
+        trace_id: str = "",
+        approval: Any | None = None,
+    ) -> MutationVerdict:
+        """Evaluate a proposed mutation. Raises RegistryDenied if refused.
+
+        With no governor configured the mutation is allowed and recorded as
+        ungoverned, so the audit trail distinguishes "policy permitted this"
+        from "nothing evaluated it".
+        """
+        if self._governor is None:
+            return MutationVerdict(allowed=True, decision="ungoverned")
+
+        meta = resource.metadata
+        spec = getattr(resource, "spec", None)
+        risk_level = getattr(getattr(spec, "risk_level", None), "value", None)
+        risk_domains = frozenset(
+            d.value for d in getattr(spec, "risk_domains", frozenset())
+        )
+
+        approver = getattr(approval, "approver", None)
+        state = getattr(approval, "state", None)
+        granted = getattr(state, "value", None) == "approved"
+
+        verdict = self._governor.evaluate(
+            MutationContext(
+                registry_type=meta.registry_type,
+                resource_id=meta.resource_id,
+                version=meta.version,
+                operation=operation,
+                principal=principal,
+                principal_roles=principal_roles,
+                principal_groups=principal_groups,
+                target_environment=target_environment,
+                resource_environments=meta.environments,
+                resource_status=meta.status,
+                resource_risk_level=risk_level,
+                resource_risk_domains=risk_domains,
+                reason=reason,
+                trace_id=trace_id,
+                approver=approver,
+                approval_granted=granted,
+            )
+        )
+        if not verdict.allowed:
+            # Refusals are audited too — a denied mutation must not be silent.
+            self._events.append(
+                RegistryEvent(
+                    registry_type=meta.registry_type,
+                    resource_id=meta.resource_id,
+                    version=meta.version,
+                    operation=operation,
+                    principal=principal,
+                    previous_state=meta.status,
+                    new_state=meta.status,
+                    reason=verdict.detail,
+                    environment=target_environment,
+                    trace_id=trace_id,
+                )
+            )
+            raise RegistryDenied(verdict)
+        return verdict
 
     # -- audit ---------------------------------------------------------------
 
@@ -468,7 +648,14 @@ class RegistryService:
     # -- lifecycle -----------------------------------------------------------
 
     def register(
-        self, resource: GovernedResource, *, principal: str = "system"
+        self,
+        resource: GovernedResource,
+        *,
+        principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        reason: str = "",
+        trace_id: str = "",
+        approval: Any | None = None,
     ) -> GovernedResource:
         meta = resource.metadata
         if meta.registry_type is not self.registry_type:
@@ -486,8 +673,17 @@ class RegistryService:
                 "versions are immutable — use create_version()"
             )
 
+        self._govern(
+            resource,
+            RegistryOperation.REGISTER,
+            principal,
+            principal_roles=principal_roles,
+            reason=reason,
+            trace_id=trace_id,
+            approval=approval,
+        )
         self._resources[meta.key] = resource
-        self._emit(resource, RegistryOperation.REGISTER, principal)
+        self._emit(resource, RegistryOperation.REGISTER, principal, trace_id=trace_id)
         return resource
 
     def create_version(
@@ -497,12 +693,25 @@ class RegistryService:
         *,
         spec_changes: dict[str, Any] | None = None,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
         reason: str = "",
+        trace_id: str = "",
+        approval: Any | None = None,
     ) -> GovernedResource:
         """Create a new immutable version. The prior version is untouched."""
         current = self.get(resource_id)
         if current is None:
             raise RegistryError(f"unknown resource: {resource_id}")
+
+        self._govern(
+            current,
+            RegistryOperation.CREATE_VERSION,
+            principal,
+            principal_roles=principal_roles,
+            reason=reason,
+            trace_id=trace_id,
+            approval=approval,
+        )
 
         new_version = current.metadata.version.bump(bump)
         new_meta = replace(
@@ -519,7 +728,11 @@ class RegistryService:
 
         self._resources[new_meta.key] = updated
         self._emit(
-            updated, RegistryOperation.CREATE_VERSION, principal, reason=reason
+            updated,
+            RegistryOperation.CREATE_VERSION,
+            principal,
+            reason=reason,
+            trace_id=trace_id,
         )
         return updated
 
@@ -543,6 +756,9 @@ class RegistryService:
         approved_by: str | None = None,
         trace_id: str = "",
         activate: bool = True,
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        reason: str = "",
     ) -> GovernedResource:
         """Promote a version into an environment.
 
@@ -555,6 +771,17 @@ class RegistryService:
             raise RegistryError(f"unknown resource: {resource_id} {version}")
         if resource.metadata.status is ResourceStatus.RETIRED:
             raise RegistryError(f"cannot promote retired resource '{resource_id}'")
+
+        self._govern(
+            resource,
+            RegistryOperation.PROMOTE,
+            requested_by,
+            principal_roles=principal_roles,
+            target_environment=target_environment,
+            reason=reason,
+            trace_id=trace_id,
+            approval=approval or _ApprovalShim(approved_by),
+        )
 
         problems = self.validate(resource_id, version)
         if problems:
@@ -612,6 +839,9 @@ class RegistryService:
         allowed_from: tuple[ResourceStatus, ...] | None = None,
         reason: str = "",
         approval_reference: str | None = None,
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
         **meta_changes: Any,
     ) -> GovernedResource:
         resource = self.get(resource_id, version)
@@ -625,6 +855,16 @@ class RegistryService:
                 f"{previous.value}; allowed from "
                 f"{', '.join(s.value for s in allowed_from)}"
             )
+
+        self._govern(
+            resource,
+            operation,
+            principal,
+            principal_roles=principal_roles,
+            reason=reason,
+            trace_id=trace_id,
+            approval=approval or _ApprovalShim(approval_reference),
+        )
 
         new_meta = replace(
             resource.metadata,
@@ -651,6 +891,9 @@ class RegistryService:
         version: str | Version | None = None,
         *,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
     ) -> GovernedResource:
         return self._transition(
             resource_id,
@@ -658,6 +901,9 @@ class RegistryService:
             ResourceStatus.ACTIVE,
             RegistryOperation.ACTIVATE,
             principal,
+            principal_roles=principal_roles,
+            approval=approval,
+            trace_id=trace_id,
             allowed_from=(ResourceStatus.DRAFT, ResourceStatus.SUSPENDED),
         )
 
@@ -667,6 +913,9 @@ class RegistryService:
         version: str | Version | None = None,
         *,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
         retirement_target_date: datetime | None = None,
         replacement_resource_id: str | None = None,
         replacement_version: str | None = None,
@@ -678,6 +927,9 @@ class RegistryService:
             ResourceStatus.DEPRECATED,
             RegistryOperation.DEPRECATE,
             principal,
+            principal_roles=principal_roles,
+            approval=approval,
+            trace_id=trace_id,
             allowed_from=(ResourceStatus.ACTIVE,),
             reason=reason,
             deprecated_at=_now(),
@@ -692,6 +944,9 @@ class RegistryService:
         version: str | Version | None = None,
         *,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
         reason: str = "",
         approval_reference: str | None = None,
     ) -> GovernedResource:
@@ -702,6 +957,9 @@ class RegistryService:
             ResourceStatus.RETIRED,
             RegistryOperation.RETIRE,
             principal,
+            principal_roles=principal_roles,
+            approval=approval,
+            trace_id=trace_id,
             reason=reason,
             approval_reference=approval_reference,
         )
@@ -714,6 +972,9 @@ class RegistryService:
         version: str | Version | None = None,
         *,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
         reason: str = "",
     ) -> GovernedResource:
         """Emergency operational control. Immediate, reversible, audited.
@@ -727,6 +988,9 @@ class RegistryService:
             ResourceStatus.SUSPENDED,
             RegistryOperation.SUSPEND,
             principal,
+            principal_roles=principal_roles,
+            approval=approval,
+            trace_id=trace_id,
             allowed_from=(ResourceStatus.ACTIVE, ResourceStatus.DEPRECATED),
             reason=reason,
         )
@@ -737,6 +1001,9 @@ class RegistryService:
         version: str | Version | None = None,
         *,
         principal: str = "system",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
         reason: str = "",
     ) -> GovernedResource:
         return self._transition(
@@ -745,6 +1012,9 @@ class RegistryService:
             ResourceStatus.ACTIVE,
             RegistryOperation.RESUME,
             principal,
+            principal_roles=principal_roles,
+            approval=approval,
+            trace_id=trace_id,
             allowed_from=(ResourceStatus.SUSPENDED,),
             reason=reason,
         )
@@ -758,10 +1028,23 @@ class RegistryService:
         principal: str = "system",
         approval_reference: str | None = None,
         reason: str = "",
+        principal_roles: frozenset[str] = frozenset(),
+        approval: Any | None = None,
+        trace_id: str = "",
     ) -> GovernedResource:
         resource = self.get(resource_id, version)
         if resource is None:
             raise RegistryError(f"unknown resource: {resource_id}")
+
+        self._govern(
+            resource,
+            RegistryOperation.TRANSFER_OWNERSHIP,
+            principal,
+            principal_roles=principal_roles,
+            reason=reason,
+            trace_id=trace_id,
+            approval=approval or _ApprovalShim(approval_reference),
+        )
 
         new_meta = replace(
             resource.metadata,
