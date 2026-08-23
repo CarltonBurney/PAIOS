@@ -1,0 +1,86 @@
+# PAIOS — Reference Slice
+
+> **Pre-specification code.** This package predates the PAIOS Master Build
+> Specification and is expected to be superseded by it. See
+> [`docs/PLANNING_ENGINE_BRIEFING.md`](../docs/PLANNING_ENGINE_BRIEFING.md) §3
+> for what it is, what it is not, and which parts may be worth carrying forward.
+
+A working vertical slice through the governance core: a request enters, is
+classified, risk-assessed, policy-checked, routed, gated on human approval when
+required, executed, and audited. It runs with no cloud dependency, which is what
+makes the governance logic testable in CI.
+
+## Run it
+
+```bash
+pip install -e '.[dev]'
+pytest
+```
+
+20 tests, no Azure account required — the default provider is a deterministic
+mock.
+
+## Try it
+
+```python
+from paios import ControlPlane, Identity, Request, InMemoryAuditSink
+
+sink = InMemoryAuditSink()
+cp = ControlPlane(audit_sink=sink)
+
+request = Request(
+    content="summarize yesterday's deployment notes",
+    identity=Identity(subject="alice@contoso.com", authenticated=True),
+)
+outcome = cp.handle(request)
+
+print(outcome.classification.request_type)   # RequestType.TECHNICAL
+print(outcome.risk.level)                    # RiskLevel.LOW
+print(outcome.routing.disposition)           # Disposition.AUTO_EXECUTE
+print(len(sink.events))                      # full audit trail
+```
+
+Ask it to do something sensitive and it stops:
+
+```python
+request = Request(
+    content="grant admin permissions to the contractor account",
+    identity=Identity(subject="alice@contoso.com", authenticated=True),
+)
+outcome = cp.handle(request)
+
+print(outcome.risk.level)             # RiskLevel.SECURITY
+print(outcome.routing.disposition)    # Disposition.ADMIN_ESCALATION
+print(outcome.delivered)              # False — no approval handler configured
+```
+
+## Connecting to Azure AI Foundry
+
+Copy `.env.example` to `.env` and set:
+
+```bash
+PAIOS_PROVIDER=foundry
+AZURE_AI_FOUNDRY_ENDPOINT=https://<your-project>.openai.azure.com
+AZURE_AI_FOUNDRY_DEPLOYMENT=<your-deployment-name>
+```
+
+Then `az login`, and:
+
+```bash
+pip install -e '.[azure]'
+```
+
+Authentication uses `DefaultAzureCredential` — your `az login` session locally,
+a managed identity in Azure. No key is read from source or from `.env`.
+
+## Design properties worth keeping
+
+- **Risk escalates, never de-escalates.** The highest detector wins; levels do
+  not average out.
+- **Governance classification is one-way.** A model can refine an ambiguous
+  request but can never reclassify a `governance_change` into something
+  routine.
+- **Deny by default.** No approval handler means high-risk requests time out
+  rather than execute.
+- **The model is replaceable.** Provider choice is configuration; nothing in
+  the pipeline knows which model answered.
