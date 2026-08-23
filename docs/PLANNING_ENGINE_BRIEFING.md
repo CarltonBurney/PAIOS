@@ -207,11 +207,28 @@ Any applicable `deny` wins; approval can never override it. Effects also carry
 The legacy boolean `require_approval` is still honoured for existing policy
 documents, but it can only ever *raise* the outcome, never lower it.
 
-**Extension made during implementation, flagged for confirmation:** policy
-conditions gained `request_types` and `principal_roles_none_of`. The latter
-fires only when the principal holds *none* of the listed roles, and is what
-lets a role-based refusal be expressed as policy rather than authorization. It
-is beyond the supplied schema and is called out here rather than assumed.
+**Principal conditions — CONFIRMED WITH NORMALIZATION.** Conditions no longer
+grow through one-off fields. Every family uses the same three predicate
+operators, implemented once in `policy.SetPredicate`:
+
+```
+principal_roles_any_of    principal_groups_any_of    risk_domains_any_of
+principal_roles_all_of    principal_groups_all_of    risk_domains_all_of
+principal_roles_none_of   principal_groups_none_of   risk_domains_none_of
+                                                     request_types_any_of
+                                                     risk_level_any_of
+```
+
+Semantics: `any_of` = non-empty intersection, `all_of` = subset, `none_of` =
+empty intersection. An empty operator imposes no constraint.
+
+Conditions describe **predicates, not business meanings**. A field like
+`principal_is_governance_admin` would encode policy into the schema and is
+specifically what this normalization prevents.
+
+Legacy bare arrays (`risk_domains`, `request_types`, `risk_level`) still parse
+and map to `any_of`. Unknown enum members now raise at load time rather than
+silently never matching.
 
 ### 2.8 Tool Registry — **ADDED**
 
@@ -340,6 +357,107 @@ concrete answer to "how does this fail safely":
 
 ---
 
+## 3A. Governed Registry Framework (§3.0) — **IMPLEMENTED**
+
+Registries are not independent JSON catalogs. `paios.registry` provides one
+lifecycle substrate; `paios.tools` is the first consumer and the proof it works.
+
+### Composition, not a universal schema
+
+```
+GovernedResourceMetadata + ToolSpec      -> ToolDefinition   (implemented)
+GovernedResourceMetadata + AgentSpec     -> AgentDefinition  (not yet built)
+GovernedResourceMetadata + ModelSpec     -> ModelDefinition  (not yet built)
+GovernedResourceMetadata + WorkflowSpec  -> WorkflowDefinition (not yet built)
+```
+
+`ToolDefinition` proxies its spec fields as properties, so `tool.risk_level`
+still reads naturally while the underlying split stays clean.
+
+### Lifecycle status replaces `enabled`
+
+| Status | Execution availability |
+|---|---|
+| `draft` | unavailable |
+| `active` | available |
+| `deprecated` | policy-gated — runs only when `PolicyDecision.permits_deprecated` |
+| `retired` | unavailable |
+| `suspended` | unavailable |
+
+`enabled` is now a **computed property**, never stored. The legacy boolean in
+registry documents is migrated on load: `true` → `active`, `false` → `retired`
+(the closest honest reading — the old format could not distinguish retired from
+suspended).
+
+### Implemented operations
+
+`register` · `get` · `list` · `create_version` · `validate` · `promote` ·
+`activate` · `deprecate` · `retire` · `suspend` · `resume` ·
+`transfer_ownership`
+
+There is deliberately **no generic `execute()`** — execution stays
+resource-specific and governed by the Execution Gateway.
+
+### Invariants proven by tests
+
+- Versions are immutable; re-registering an existing version is refused.
+- Promotion never mutates the version promoted from — it records that the same
+  immutable version is now available in a further environment.
+- Retired identifiers are burned and cannot be reused.
+- Retired resources remain addressable so historical audit can resolve exactly
+  what ran.
+- Every lifecycle mutation emits a `RegistryEvent` with the full audit shape.
+- Stored definitions are frozen dataclasses; direct mutation raises rather than
+  bypassing the lifecycle.
+
+### Locked rule — registry activation is not authorization
+
+An `active` resource is *operationally available*. It does not mean the current
+principal may use it. That still requires identity, authorization, policy, and
+context. Directly parallel to the risk rule, and covered by tests.
+
+---
+
+## 3B. Specification backlog
+
+### Break-glass control plane — **DO NOT IMPLEMENT YET**
+
+`L4 + security + prod` denies on the normal control plane, and that is the
+point of an L4 tier: if an operation can proceed on manager approval, it was
+L3. But L4 must not come to mean "impossible under every circumstance" —
+enterprises need break-glass, and if the normal path cannot express it,
+somebody will eventually solve an emergency by weakening `deny`.
+
+Break-glass must therefore be a **separate mechanism**, not a policy exception:
+
+- separate authorization
+- separate policy set
+- separate audit stream
+- explicitly activated, never ambient
+- time-limited
+- never reachable by ordinary agent approval
+
+The `suspend`/`resume` pair in the registry is one primitive the eventual
+kill-switch and break-glass systems will build on — reversible, immediate,
+audited, requiring no version change.
+
+An administrative workflow designed for privileged access is modeled
+separately. The general assistant is never taught to bypass an L4 decision.
+
+### Registry approval integration — open
+
+Registry changes may themselves be governed: development registration possibly
+automatic, production promotion requiring approval, ownership transfer
+requiring approval, retirement of a production resource requiring approval. The
+service already carries `approved_by` and `approval_reference` through
+promotion and ownership transfer, but does **not yet call the policy engine**
+to decide whether an approval was required. Wiring the registry into the
+existing policy/approval architecture — rather than bypassing it — is
+outstanding.
+
+
+---
+
 ## 4. Environment facts
 
 - **Repository:** `github.com/CarltonBurney/PAIOS`, **public**.
@@ -391,12 +509,13 @@ authentication uses `DefaultAzureCredential` (managed identity in Azure,
    they describe a risk taxonomy the code no longer implements.
 5. ~~Whether policy needs a `deny` effect~~ — **resolved**, added (§2.7).
 6. ~~The tool namespace~~ — **resolved**, Tool Registry is first-class (§2.8).
-7. **Next slice:** Agent Registry, Model Registry, and Workflow Registry, plus
-   the common registry lifecycle they should all share — registration,
-   versioning, enable/disable, ownership, promotion, retirement, audit. The
-   Tool Registry is currently the only registry and was built standalone; the
-   lifecycle pattern should be defined once and applied to all four rather than
-   letting each evolve its own.
-8. Confirm the `principal_roles_none_of` / `request_types` condition extension
-   (§2.7), which was added during implementation and is not in the supplied
-   schema.
+7. ~~Common registry lifecycle~~ — **implemented** (§3A), with the Tool
+   Registry retrofitted onto it as proof.
+8. ~~Principal condition extension~~ — **normalized** into predicate families
+   (§2.7).
+9. **Next slice:** Agent, Model, and Workflow registries. The substrate is
+   stable enough to build all three in parallel — each is a `*Spec` composed
+   with `GovernedResourceMetadata` plus a facade over `RegistryService`.
+10. Registry approval integration (§3B) — the registry does not yet consult
+    the policy engine about whether a lifecycle change itself needs approval.
+11. Break-glass control plane (§3B) — specified, deliberately not built.

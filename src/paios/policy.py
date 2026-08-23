@@ -88,24 +88,106 @@ class PolicyScope:
 
 
 @dataclass(frozen=True)
-class PolicyConditions:
-    """Empty condition sets mean "any" — an unconditioned policy always fires.
+class SetPredicate:
+    """A predicate over a set of values. Three operators, uniform semantics.
 
-    ``risk_domains`` matches on OVERLAP, never exact equality: a policy scoped
-    to ``["security"]`` fires on a request carrying
-    ``["security", "compliance"]``. Formally::
+    Conditions describe *predicates*, never business meanings. The policy
+    language grows by adding operators to this type, not by adding
+    special-purpose fields like ``principal_is_governance_admin``.
 
-        policy_domains ∩ request_domains ≠ ∅
+    - ``any_of``  — candidate ∩ any_of ≠ ∅   (the default for a bare array)
+    - ``all_of``  — all_of ⊆ candidate
+    - ``none_of`` — candidate ∩ none_of = ∅
 
-    A future schema revision may add explicit ``any_of`` / ``all_of`` /
-    ``none_of`` operators. Until then the bare array always means any_of, and
-    must never be silently reinterpreted as exact equality.
+    An operator left empty imposes no constraint. An empty predicate matches
+    everything.
     """
 
-    risk_level: frozenset[RiskLevel] = frozenset()
-    risk_domains: frozenset[RiskDomain] = frozenset()
-    request_types: frozenset[RequestType] = frozenset()
-    principal_roles_none_of: frozenset[str] = frozenset()
+    any_of: frozenset[str] = frozenset()
+    all_of: frozenset[str] = frozenset()
+    none_of: frozenset[str] = frozenset()
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.any_of or self.all_of or self.none_of)
+
+    def matches(self, candidate: frozenset[str]) -> bool:
+        if self.any_of and not (self.any_of & candidate):
+            return False
+        if self.all_of and not self.all_of.issubset(candidate):
+            return False
+        if self.none_of and (self.none_of & candidate):
+            return False
+        return True
+
+    @classmethod
+    def from_conditions(
+        cls, raw: dict[str, Any], base: str, *, legacy_keys: tuple[str, ...] = ()
+    ) -> SetPredicate:
+        """Read ``<base>_any_of`` / ``_all_of`` / ``_none_of`` from a document.
+
+        ``legacy_keys`` names older bare-array fields that mean any_of. A bare
+        array has always meant any_of and must never be reinterpreted as exact
+        equality.
+        """
+        any_of = set(raw.get(f"{base}_any_of", ()))
+        for legacy in legacy_keys:
+            any_of.update(raw.get(legacy, ()))
+        return cls(
+            any_of=frozenset(any_of),
+            all_of=frozenset(raw.get(f"{base}_all_of", ())),
+            none_of=frozenset(raw.get(f"{base}_none_of", ())),
+        )
+
+
+def _validate_members(predicate: SetPredicate, enum_cls: type, field: str) -> None:
+    """Fail loudly on a value the enum does not define, rather than never matching."""
+    valid = {member.value for member in enum_cls}
+    unknown = (predicate.any_of | predicate.all_of | predicate.none_of) - valid
+    if unknown:
+        raise ValueError(
+            f"unknown {field} value(s): {', '.join(sorted(unknown))}; "
+            f"expected from {sorted(valid)}"
+        )
+
+
+@dataclass(frozen=True)
+class PolicyConditions:
+    """Predicate set. An empty condition block matches every request.
+
+    Every family uses the same three operators — see SetPredicate. Bare legacy
+    arrays (``risk_domains``, ``request_types``, ``principal_roles_none_of``)
+    are still read and map onto the normalized form.
+    """
+
+    risk_level: SetPredicate = field(default_factory=SetPredicate)
+    risk_domains: SetPredicate = field(default_factory=SetPredicate)
+    request_types: SetPredicate = field(default_factory=SetPredicate)
+    principal_roles: SetPredicate = field(default_factory=SetPredicate)
+    principal_groups: SetPredicate = field(default_factory=SetPredicate)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> PolicyConditions:
+        risk_level = SetPredicate.from_conditions(
+            raw, "risk_level", legacy_keys=("risk_level",)
+        )
+        risk_domains = SetPredicate.from_conditions(
+            raw, "risk_domains", legacy_keys=("risk_domains",)
+        )
+        request_types = SetPredicate.from_conditions(
+            raw, "request_types", legacy_keys=("request_types",)
+        )
+        _validate_members(risk_level, RiskLevel, "risk_level")
+        _validate_members(risk_domains, RiskDomain, "risk_domains")
+        _validate_members(request_types, RequestType, "request_types")
+
+        return cls(
+            risk_level=risk_level,
+            risk_domains=risk_domains,
+            request_types=request_types,
+            principal_roles=SetPredicate.from_conditions(raw, "principal_roles"),
+            principal_groups=SetPredicate.from_conditions(raw, "principal_groups"),
+        )
 
     def matches(
         self,
@@ -113,21 +195,30 @@ class PolicyConditions:
         classification: Classification | None = None,
         identity: Identity | None = None,
     ) -> bool:
-        if self.risk_level and risk.level not in self.risk_level:
+        if not self.risk_level.matches(frozenset({risk.level.value})):
             return False
-        if self.risk_domains and not (self.risk_domains & risk.domains):
+        if not self.risk_domains.matches(frozenset(d.value for d in risk.domains)):
             return False
-        if self.request_types:
+
+        if not self.request_types.is_empty:
             if classification is None:
                 return False
-            if classification.request_type not in self.request_types:
+            candidate = frozenset({classification.request_type.value})
+            if not self.request_types.matches(candidate):
                 return False
-        if self.principal_roles_none_of:
+
+        if not self.principal_roles.is_empty:
             if identity is None:
                 return False
-            # Fires only when the principal holds NONE of the listed roles.
-            if identity.roles & self.principal_roles_none_of:
+            if not self.principal_roles.matches(frozenset(identity.roles)):
                 return False
+
+        if not self.principal_groups.is_empty:
+            if identity is None:
+                return False
+            if not self.principal_groups.matches(frozenset(identity.groups)):
+                return False
+
         return True
 
 
@@ -185,20 +276,7 @@ class Policy:
                     agents=tuple(scope_raw.get("agents", (WILDCARD,))),
                     environments=tuple(scope_raw.get("environments", (WILDCARD,))),
                 ),
-                conditions=PolicyConditions(
-                    risk_level=frozenset(
-                        RiskLevel(v) for v in cond_raw.get("risk_level", ())
-                    ),
-                    risk_domains=frozenset(
-                        RiskDomain(v) for v in cond_raw.get("risk_domains", ())
-                    ),
-                    request_types=frozenset(
-                        RequestType(v) for v in cond_raw.get("request_types", ())
-                    ),
-                    principal_roles_none_of=frozenset(
-                        cond_raw.get("principal_roles_none_of", ())
-                    ),
-                ),
+                conditions=PolicyConditions.from_dict(cond_raw),
                 effects=PolicyEffects(
                     decision=decision,
                     allowed_tools=tuple(eff_raw.get("allowed_tools", ())),

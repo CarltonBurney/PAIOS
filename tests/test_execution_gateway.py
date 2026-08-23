@@ -36,6 +36,7 @@ def resolver() -> StaticHandlerResolver:
             "security_write": lambda args: {"written": True},
             "bulk_export": lambda args: {"rows": 0},
             "legacy_report": lambda args: {"legacy": True},
+            "retired_export": lambda args: {"retired": True},
         }
     )
 
@@ -62,7 +63,7 @@ ALLOW = PolicyDecision(decision=PolicyOutcome.ALLOW)
 
 class TestRegistry:
     def test_registry_loads_from_file(self, registry):
-        assert len(registry) == 5
+        assert len(registry) == 6
         assert "security_read" in registry
 
     def test_unknown_tool_is_not_registered(self, registry):
@@ -73,9 +74,12 @@ class TestRegistry:
         with pytest.raises(ToolRegistryError):
             registry.require("invented_by_an_agent")
 
-    def test_disabled_tools_are_excluded_from_enabled_set(self, registry):
+    def test_retired_tools_are_excluded_from_enabled_set(self, registry):
+        """`enabled` is computed from lifecycle status, not stored."""
         enabled = {t.tool_id for t in registry.enabled_tools()}
-        assert "legacy_report" not in enabled
+        assert "retired_export" not in enabled
+        # Deprecated is still nominally enabled — it is policy-gated, not off.
+        assert "legacy_report" in enabled
 
     def test_duplicate_tool_ids_are_rejected(self):
         with pytest.raises(ToolRegistryError):
@@ -104,13 +108,13 @@ class TestGatewayRejections:
         assert not result.allowed
         assert result.reason is RejectionReason.UNKNOWN_TOOL
 
-    def test_disabled_tool_cannot_execute(self, gateway):
-        """Required test 9."""
+    def test_retired_tool_cannot_execute(self, gateway):
+        """Required test 9 — a retired tool is unavailable regardless."""
         result = gateway.execute(
-            principal=principal(), tool_id="legacy_report", governance_context=ALLOW
+            principal=principal(), tool_id="retired_export", governance_context=ALLOW
         )
         assert not result.allowed
-        assert result.reason is RejectionReason.TOOL_DISABLED
+        assert result.reason is RejectionReason.TOOL_RETIRED
 
     def test_denied_tool_cannot_execute(self, gateway):
         """Required test 10."""
@@ -177,7 +181,8 @@ class TestGatewayRejections:
             approval=Approval(state=ApprovalState.APPROVED, approver="boss"),
         )
         assert not result.allowed
-        assert result.reason is RejectionReason.ENVIRONMENT_NOT_PERMITTED
+        # Promotion is authoritative and is checked before declared constraints.
+        assert result.reason is RejectionReason.TOOL_NOT_IN_ENVIRONMENT
 
     def test_caller_type_restriction_is_enforced(self, gateway):
         result = gateway.execute(
@@ -350,7 +355,7 @@ class TestExecutionAuditing:
         ("tool_id", "decision"),
         [
             ("not_a_tool", ALLOW),
-            ("legacy_report", ALLOW),
+            ("retired_export", ALLOW),
             ("directory_read", PolicyDecision(decision=PolicyOutcome.DENY)),
             ("directory_read", PolicyDecision(decision=PolicyOutcome.REQUIRE_APPROVAL)),
         ],

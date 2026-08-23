@@ -233,6 +233,7 @@ class PolicyDecision:
     allowed_tools: frozenset[str] | None = None
     denied_tools: frozenset[str] = frozenset()
     audit_level: str = "standard"
+    permits_deprecated: bool = False
 
     @property
     def denied(self) -> bool:
@@ -271,6 +272,7 @@ class PolicyDecision:
             ),
             "denied_tools": sorted(self.denied_tools),
             "audit_level": self.audit_level,
+            "permits_deprecated": self.permits_deprecated,
         }
 
 

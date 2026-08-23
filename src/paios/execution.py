@@ -35,6 +35,7 @@ from typing import Any, Protocol
 
 from .audit import AuditStage, AuditTrail
 from .models import Approval, ApprovalState, Identity, PolicyDecision
+from .registry import ResourceStatus
 from .tools import CallerType, ToolDefinition, ToolRegistry
 
 Handler = Callable[[dict[str, Any]], Any]
@@ -45,6 +46,11 @@ class RejectionReason(str, Enum):
 
     UNKNOWN_TOOL = "unknown_tool"
     TOOL_DISABLED = "tool_disabled"
+    TOOL_DRAFT = "tool_draft"
+    TOOL_RETIRED = "tool_retired"
+    TOOL_SUSPENDED = "tool_suspended"
+    TOOL_DEPRECATED_NOT_PERMITTED = "tool_deprecated_not_permitted"
+    TOOL_NOT_IN_ENVIRONMENT = "tool_not_in_environment"
     POLICY_DENIED = "policy_denied"
     TOOL_DENIED_BY_POLICY = "tool_denied_by_policy"
     APPROVAL_REQUIRED = "approval_required"
@@ -161,17 +167,48 @@ class ExecutionGateway:
             return result
 
         # 1. The tool must be registered. An unknown id is not a tool.
-        tool = self.registry.get(tool_id)
+        tool = self.registry.get_for_execution(
+            tool_id, self.environment
+        ) or self.registry.get(tool_id)
         if tool is None:
             return reject(
                 RejectionReason.UNKNOWN_TOOL,
                 f"'{tool_id}' is not in the tool registry",
             )
 
-        # 2. A retired or disabled tool is unavailable regardless of permission.
-        if not tool.enabled:
+        # 2. Lifecycle status gates execution before any permission question.
+        #    Registry activation is not authorization — an available resource
+        #    still has to clear every check below.
+        status = tool.metadata.status
+        if status is ResourceStatus.DRAFT:
             return reject(
-                RejectionReason.TOOL_DISABLED, f"tool '{tool_id}' is disabled"
+                RejectionReason.TOOL_DRAFT,
+                f"tool '{tool_id}' is in draft and is not executable",
+            )
+        if status is ResourceStatus.RETIRED:
+            return reject(
+                RejectionReason.TOOL_RETIRED, f"tool '{tool_id}' is retired"
+            )
+        if status is ResourceStatus.SUSPENDED:
+            return reject(
+                RejectionReason.TOOL_SUSPENDED,
+                f"tool '{tool_id}' is suspended",
+            )
+        if status is ResourceStatus.DEPRECATED:
+            # Deprecated resources run only where policy explicitly permits.
+            if not decision.permits_deprecated:
+                return reject(
+                    RejectionReason.TOOL_DEPRECATED_NOT_PERMITTED,
+                    f"tool '{tool_id}' is deprecated and policy does not "
+                    "permit deprecated resources",
+                )
+
+        # The version must have been promoted into this environment.
+        if not tool.metadata.in_environment(self.environment):
+            return reject(
+                RejectionReason.TOOL_NOT_IN_ENVIRONMENT,
+                f"tool '{tool_id}' {tool.version} is not promoted to "
+                f"{self.environment}",
             )
 
         # 3. A policy deny is final. Approval cannot override it.
@@ -261,7 +298,8 @@ class ExecutionGateway:
                 AuditStage.EXECUTION_ALLOWED,
                 subject,
                 tool_id=tool_id,
-                version=tool.version,
+                version=str(tool.version),
+                status=tool.status.value,
                 operation_type=tool.operation_type.value,
                 audit_level=max(tool.audit_level, decision.audit_level),
             )

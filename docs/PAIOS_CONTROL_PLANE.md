@@ -114,12 +114,27 @@ registration, and approval are separate inputs to the final execution decision.
 |-------|--------------------|
 | **Authorization** | Is this identity entitled to attempt this class of operation? |
 | **Policy** | May this specific, otherwise-authorized request proceed under current governance conditions? |
-| **Tool Registry** | Does this tool exist, and what does its contract require? |
+| **Tool Registry** | Does this resource exist, what does its contract require, and is it operationally available? |
 | **Execution Gateway** | May this principal invoke this tool, right now, with these arguments? |
 
 Each layer is independently sufficient to refuse and none can be skipped. A
 policy decision is advisory until the Execution Gateway re-validates it — the
 gateway does not trust that a caller consulted policy first.
+
+### Governed registries
+
+Agent, Model, Tool, and Workflow registries share one lifecycle substrate while
+keeping resource-specific schemas, composed as
+`GovernedResourceMetadata + <Resource>Spec`. Resources move through `draft` →
+`active` → `deprecated` → `retired`, with `suspended` as a reversible emergency
+control. Versions are immutable: a governance-relevant change creates a new
+version rather than mutating the active definition, so historical audit can
+always resolve exactly what ran.
+
+**Registry activation is not authorization.** An `active` resource is
+operationally available; whether *this* principal may use it is decided by
+identity, authorization, policy, and context. The same principle as the risk
+rule above.
 
 Policy decisions resolve by precedence:
 
@@ -128,6 +143,11 @@ deny  >  require_approval  >  allow_with_controls  >  allow
 ```
 
 Any applicable `deny` wins. Approval can never override a deny.
+
+An `L4` operation denied on the normal control plane is denied — that is what
+the tier is for. Emergency access is a separate break-glass mechanism with its
+own authorization, policy, audit, and time limits, never an exception carved
+into `deny`.
 
 ## Enterprise Value
 

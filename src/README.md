@@ -17,7 +17,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-29 tests, no Azure account required — the default provider is a deterministic
+122 tests, no Azure account required — the default provider is a deterministic
 mock.
 
 ## Try it
@@ -90,3 +90,9 @@ a managed identity in Azure. No key is read from source or from `.env`.
   rather than execute.
 - **The model is replaceable.** Provider choice is configuration; nothing in
   the pipeline knows which model answered.
+- **Registry activation is not authorization.** An `active` tool is available;
+  whether this principal may call it is a separate decision.
+- **Versions are immutable.** Changing governance-relevant configuration creates
+  a new version, so audit can resolve exactly what ran.
+- **The gateway is the boundary.** `permits_tool()` is a decision;
+  `ExecutionGateway.execute()` is enforcement, and it re-validates independently.
