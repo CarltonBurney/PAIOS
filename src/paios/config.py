@@ -12,7 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_POLICY_PATH = REPO_ROOT / "policies" / "sample-governance-policies.json"
+DEFAULT_POLICY_PATH = REPO_ROOT / "policies" / "policy-rules.json"
+DEFAULT_RISK_MODEL_PATH = REPO_ROOT / "policies" / "risk-model.json"
 
 
 class ConfigError(RuntimeError):
@@ -34,6 +35,7 @@ class Settings:
     client_id: str | None = None
 
     policy_path: Path = DEFAULT_POLICY_PATH
+    risk_model_path: Path = DEFAULT_RISK_MODEL_PATH
     audit_path: Path | None = None
 
     @classmethod
@@ -45,6 +47,7 @@ class Settings:
             return value.strip() if isinstance(value, str) else value
 
         policy = get("PAIOS_POLICY_PATH")
+        risk_model = get("PAIOS_RISK_MODEL_PATH")
         audit = get("PAIOS_AUDIT_PATH")
 
         return cls(
@@ -57,6 +60,9 @@ class Settings:
             tenant_id=get("AZURE_TENANT_ID"),
             client_id=get("AZURE_CLIENT_ID"),
             policy_path=Path(policy) if policy else DEFAULT_POLICY_PATH,
+            risk_model_path=(
+                Path(risk_model) if risk_model else DEFAULT_RISK_MODEL_PATH
+            ),
             audit_path=Path(audit) if audit else None,
         )
 

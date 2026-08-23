@@ -1,0 +1,76 @@
+{
+  "policySetName": "PAIOS Governance Policies v1.0",
+  "description": "Declarative governance policies. Each policy is scoped, conditioned on the two-axis risk model, and carries effects. Effects merge across all matching policies: require_approval ORs, denied_tools unions, allowed_tools intersects (least privilege), audit_level takes the maximum.",
+  "policies": [
+    {
+      "policy_id": "PAIOS-SEC-001",
+      "enabled": true,
+      "priority": 100,
+      "scope": {
+        "departments": ["*"],
+        "agents": ["*"],
+        "environments": ["prod"]
+      },
+      "conditions": {
+        "risk_level": ["L3", "L4"],
+        "risk_domains": ["security"]
+      },
+      "effects": {
+        "require_approval": true,
+        "allowed_tools": ["security_read"],
+        "denied_tools": ["security_write"],
+        "audit_level": "full"
+      }
+    },
+    {
+      "policy_id": "PAIOS-PRIV-001",
+      "enabled": true,
+      "priority": 90,
+      "scope": {
+        "departments": ["*"],
+        "agents": ["*"],
+        "environments": ["*"]
+      },
+      "conditions": {
+        "risk_level": ["L3", "L4"],
+        "risk_domains": ["privacy"]
+      },
+      "effects": {
+        "require_approval": true,
+        "denied_tools": ["bulk_export"],
+        "audit_level": "full"
+      }
+    },
+    {
+      "policy_id": "PAIOS-GOV-001",
+      "enabled": true,
+      "priority": 80,
+      "scope": {
+        "departments": ["*"],
+        "agents": ["*"],
+        "environments": ["*"]
+      },
+      "conditions": {
+        "risk_domains": ["governance"]
+      },
+      "effects": {
+        "require_approval": true,
+        "audit_level": "full"
+      }
+    },
+    {
+      "policy_id": "PAIOS-BASE-001",
+      "enabled": true,
+      "priority": 0,
+      "scope": {
+        "departments": ["*"],
+        "agents": ["*"],
+        "environments": ["*"]
+      },
+      "conditions": {},
+      "effects": {
+        "audit_level": "standard"
+      }
+    }
+  ]
+}

@@ -4,9 +4,10 @@
 Specification v1.0*, so the specification is written against what this
 repository actually contains rather than an assumed starting point.
 
-**Status of this document:** facts, not architecture. It makes no design
-decisions. Where it raises a conflict, it states the conflict and leaves the
-resolution to the specification.
+**Status of this document:** facts, not architecture. Where it raises a
+conflict, it states the conflict. Sections marked **RESOLVED** record decisions
+supplied by the project owner and now implemented; everything else remains open
+for the specification.
 
 Generated from commit state on branch `claude/control-plane-implementation`.
 
@@ -77,50 +78,87 @@ update the other so the documentation and the implementation do not diverge.
 | `core` | Core Agent |
 | `governance_change` | Human Approval Gate |
 
-### 2.3 Risk levels — **conflict flagged**
+### 2.3 Risk levels — **RESOLVED**
 
-The committed documentation defines five risk levels as *categories of concern*:
+Previously flagged as a conflict between the committed taxonomy (Low/Standard/
+Sensitive/Compliance/Security) and the L0–L4 scale in the build brief. Resolved
+in favour of **both axes, kept orthogonal**:
 
-| Level | Trigger | Action |
+```json
+{ "risk_level": "L3", "risk_domains": ["security", "compliance"] }
+```
+
+- **`risk_level`** — an ordered impact scale, L0 to L4. Answers *how much
+  damage could this do*. Exactly one per request.
+- **`risk_domains`** — non-exclusive kinds of concern (security, compliance,
+  privacy, financial, operational, governance). Answers *what kind of concern
+  is this*. Zero or more per request.
+
+This resolves the ambiguity the single-axis model had: "is Compliance above or
+below Security?" was unanswerable because they are not on the same line. A
+request can now be L3 in both the security and compliance domains at once,
+which the committed model could not express and the pure L0–L4 scale could not
+either.
+
+Level assignment ratchets: detectors escalate the level and accumulate domains,
+and nothing lowers a level once raised.
+
+Implemented in `policies/risk-model.json` — detectors, level definitions, and
+the level→disposition mapping are all configuration, satisfying the brief's
+"do not hard-code policy logic" requirement for the risk layer.
+
+**Documentation still to reconcile:** `architecture/workflows/request-classification-flow.md`
+and `docs/PAIOS_CONTROL_PLANE.md` still describe the old single-axis taxonomy.
+They should be updated to the two-axis model, or the specification should state
+that they are superseded.
+
+### 2.4 Policy schema — **RESOLVED**
+
+The prose-control format in `policies/sample-governance-policies.json` is
+replaced by a declarative scoped/conditioned/effected schema:
+
+```json
+{
+  "policy_id": "PAIOS-SEC-001",
+  "enabled": true,
+  "priority": 100,
+  "scope":      { "departments": ["*"], "agents": ["*"], "environments": ["prod"] },
+  "conditions": { "risk_level": ["L3", "L4"], "risk_domains": ["security"] },
+  "effects":    { "require_approval": true,
+                  "allowed_tools": ["security_read"],
+                  "denied_tools": ["security_write"],
+                  "audit_level": "full" }
+}
+```
+
+Implemented in `policies/policy-rules.json`, which `config.py` now loads by
+default. Merge semantics across all matching policies, chosen for
+least-privilege and order-independence:
+
+| Effect | Merge rule | Rationale |
 |---|---|---|
-| Low | Routine, no sensitive data | Auto-execute |
-| Standard | Normal operational | Auto-execute with logging |
-| Sensitive | Personal/client data | Human review |
-| Compliance | Regulatory or legal | Human review + documentation |
-| Security | System/access changes | Admin escalation |
+| `require_approval` | logical OR | any policy demanding approval wins |
+| `denied_tools` | union | a denial anywhere is a denial everywhere |
+| `allowed_tools` | intersection of specified lists | adding a policy can never *widen* permissions |
+| `audit_level` | maximum (minimal < standard < full) | the strictest observer wins |
 
-The planning brief proposes five levels as an *impact scale*: L0 informational
-/ read-only, L1 low-impact internal, L2 controlled business action, L3
-sensitive/high-impact requiring approval, L4 prohibited or executive escalation.
+`priority` orders evaluation for deterministic reporting, but the merge is
+order-independent by construction — two policies at equal priority cannot
+produce different results depending on file order.
 
-**These are not the same taxonomy renamed.** The committed model classifies by
-*what kind of concern* a request raises — a compliance question and a security
-change are different in kind, not in magnitude, and can co-occur. The proposed
-model classifies by *how much impact* an action has, which is a single ordered
-axis.
+**Decision made during implementation, flagged for confirmation:** `risk_domains`
+in `conditions` matches on **overlap**, not exact set equality. A policy scoped
+to `["security"]` fires on a request carrying `["security", "compliance"]`. The
+alternative — requiring all listed domains — would make multi-domain policies
+progressively harder to trigger as detectors improve, which is the wrong
+direction for a governance control.
 
-Consequences either way:
+**Not yet resolved:** the schema has no `deny` effect. Outright refusal is
+currently handled separately, as authorization (see §3.3), not as policy. If
+policy should be able to deny outright, the schema needs that effect.
 
-- **Adopt L0–L4:** `architecture/workflows/request-classification-flow.md`,
-  `docs/PAIOS_CONTROL_PLANE.md`, and `policies/sample-governance-policies.json`
-  all need revision, or the docs will contradict the code.
-- **Keep the committed model:** the ordering is ambiguous (is Compliance above
-  or below Security?) and needs an explicit precedence rule, since a single
-  request can trigger several categories at once.
-- **Support both:** treat concern-category and impact-level as two orthogonal
-  dimensions. More expressive, more configuration surface.
-
-This is the single most consequential unresolved question in the current
-material and should be settled early in the specification.
-
-### 2.4 Governance policy shape (policies/sample-governance-policies.json)
-
-Two policies, `PS-001` (Request Classification) and `PS-002` (Approval
-Workflow), each with a `controls` array of natural-language control statements.
-The current shape has no machine-readable condition or effect — controls are
-prose, and enforcement is bound to them in code by exact string match. **This
-does not satisfy the brief's "do not hard-code policy logic" requirement** and
-needs a real policy schema (condition/effect/scope) in the specification.
+**Superseded:** `policies/sample-governance-policies.json` remains in the tree
+as the documented artifact from `main` but is no longer loaded.
 
 ---
 
@@ -136,9 +174,9 @@ src/paios/
   __init__.py          package exports
   models.py            domain types (Identity, Request, Classification, …)
   classification.py    rule-based classifier + optional model assist
-  risk.py              risk assignment by escalation
-  policy.py            policy loading and enforcement
-  routing.py           risk → disposition table
+  risk.py              two-axis risk assessment, config-driven
+  policy.py            declarative policy engine
+  routing.py           authorization + disposition
   audit.py             append-only audit trail, correlation IDs
   control_plane.py     the pipeline
   config.py            environment configuration
@@ -147,10 +185,10 @@ src/paios/
     mock.py            deterministic test provider
     foundry.py         Azure AI Foundry (DefaultAzureCredential)
 tests/
-  test_control_plane.py  20 tests, all passing
+  test_control_plane.py  29 tests, all passing
 ```
 
-Verified state: `ruff check` clean, `pytest` 20/20 passing on Python 3.11
+Verified state: `ruff check` clean, `pytest` 29/29 passing on Python 3.11
 (package targets 3.12+).
 
 ### 3.1 How to treat it
@@ -159,10 +197,11 @@ This slice was written **before** the specification existed and is explicitly
 subordinate to it. It is offered as a reference for how the governance core can
 be shaped, not as an architecture to preserve. Known divergences from the brief:
 
-- Risk tiers are pattern-driven and hard-coded; the brief requires five
-  configurable tiers.
-- Policy enforcement binds to control strings by exact match; the brief
-  requires a configurable policy engine.
+- ~~Risk tiers hard-coded~~ — now configurable via `policies/risk-model.json`.
+- ~~Policy bound to control strings~~ — now a declarative schema (§2.4).
+- Tool permissions are *decided and audited* but not yet *enforced* — there is
+  no tool execution layer for `permits_tool()` to gate. The decision is
+  computed and recorded; a future execution gateway consumes it.
 - No FastAPI surface, no Pydantic, no persistence, no Graph adapter, no
   retrieval layer, no registries, no telemetry — none of the subsystems the
   brief enumerates.
@@ -233,9 +272,14 @@ authentication uses `DefaultAzureCredential` (managed identity in Azure,
 
 ## 6. Recommended first questions for the specification to answer
 
-1. Risk taxonomy — resolve the conflict in §2.3. Everything downstream
-   (policy schema, routing table, approval matrix, audit fields) depends on it.
-2. Policy schema — what replaces prose controls, and what evaluates it.
-3. Canonical lifecycle — 10-stage documented vs 14-step proposed (§2.1).
+1. ~~Risk taxonomy~~ — **resolved**, two orthogonal axes (§2.3).
+2. ~~Policy schema~~ — **resolved**, scoped/conditioned/effected records (§2.4).
+3. Canonical lifecycle — 10-stage documented vs 14-step proposed (§2.1). Still open.
 4. Whether the existing `architecture/` and `docs/` files are updated to match
-   the specification, or superseded and archived.
+   the specification, or superseded and archived. Still open, and now overdue:
+   they describe a risk taxonomy the code no longer implements.
+5. Whether policy needs a `deny` effect, or whether outright refusal stays in
+   the authorization layer (§2.4).
+6. The tool namespace. Policies already reference tools by name
+   (`security_read`, `security_write`, `bulk_export`); nothing yet defines what
+   tools exist or who registers them.

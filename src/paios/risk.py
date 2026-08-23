@@ -1,109 +1,166 @@
-"""Risk level assignment.
+"""Risk assessment — two axes, loaded from configuration.
 
-Risk is assigned by taking the *highest* level any detector fires on. Levels
-never cancel out: a request that touches both client PII and a permission
-change is a SECURITY request, not an averaged one.
+`level` is an ordered impact scale (L0-L4). `domains` are non-exclusive kinds
+of concern. A request carries exactly one level and any number of domains.
 
-The detectors here are intentionally conservative. In a governance control
-plane, a false positive costs a human review; a false negative costs an
+Detectors only ever escalate: the level ratchets upward as detectors fire and
+domains accumulate. Nothing lowers a level once raised. In a governance control
+plane a false positive costs a human review; a false negative costs an
 unreviewed action on sensitive data.
+
+Detectors live in policies/risk-model.json, not in this file, so tuning risk
+does not require a deployment.
 """
 
 from __future__ import annotations
 
+import json
 import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from .models import (
     Classification,
     Request,
     RequestType,
     RiskAssessment,
+    RiskDomain,
     RiskLevel,
 )
 
-# --- Detector patterns -------------------------------------------------------
 
-_SECURITY_PATTERNS = (
-    r"\bpermission(s)?\b",
-    r"\baccess (?:control|right|level)s?\b",
-    r"\bgrant\b",
-    r"\brevoke\b",
-    r"\bprivilege\b",
-    r"\badmin(?:istrator)?\b",
-    r"\broot\b",
-    r"\bcredential\b",
-    r"\bsecret\b",
-    r"\bapi[- ]?key\b",
-    r"\bpassword\b",
-    r"\btoken\b",
-    r"\bfirewall\b",
-    r"\bdelete (?:the )?(?:database|tenant|account|user)\b",
-    r"\bdisable (?:logging|audit|mfa)\b",
-    r"\bservice principal\b",
-    r"\brole assignment\b",
-)
-
-_COMPLIANCE_PATTERNS = (
-    r"\bgdpr\b",
-    r"\bhipaa\b",
-    r"\bsox\b",
-    r"\bpci\b",
-    r"\bccpa\b",
-    r"\bregulat",
-    r"\bcompliance\b",
-    r"\blegal\b",
-    r"\bcontract\b",
-    r"\bliabilit",
-    r"\bretention (?:policy|period|schedule)\b",
-    r"\bdata residency\b",
-    r"\baudit(?:or|ed)\b",
-    r"\bsubpoena\b",
-    r"\bdisclosure\b",
-)
-
-_SENSITIVE_PATTERNS = (
-    r"\bssn\b",
-    r"\bsocial security\b",
-    r"\bdate of birth\b",
-    r"\bdob\b",
-    r"\bsalary\b",
-    r"\bcompensation\b",
-    r"\bmedical\b",
-    r"\bdiagnos",
-    r"\bpersonal (?:data|information)\b",
-    r"\bpii\b",
-    r"\bclient (?:data|record|list|information)\b",
-    r"\bcustomer (?:data|record|list)\b",
-    r"\bemployee record\b",
-    r"\bhome address\b",
-    r"\bpayroll\b",
-)
-
-# Structural PII — matched on shape rather than vocabulary.
-_PII_SHAPES: tuple[tuple[str, str], ...] = (
-    ("email_address", r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b"),
-    ("ssn_format", r"\b\d{3}-\d{2}-\d{4}\b"),
-    ("credit_card_format", r"\b(?:\d[ -]?){13,16}\b"),
-    ("phone_format", r"\b(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b"),
-)
-
-_STANDARD_PATTERNS = (
-    r"\bupdate\b",
-    r"\bcreate\b",
-    r"\bmodify\b",
-    r"\bchange\b",
-    r"\bsend\b",
-    r"\bpublish\b",
-    r"\bapprove\b",
-)
+class RiskModelError(ValueError):
+    """Raised when the risk model file is malformed."""
 
 
-def _hits(text: str, patterns: tuple[str, ...]) -> list[str]:
-    return [p for p in patterns if re.search(p, text, re.IGNORECASE)]
+@dataclass(frozen=True)
+class Detector:
+    id: str
+    level: RiskLevel
+    domains: frozenset[RiskDomain]
+    patterns: tuple[re.Pattern[str], ...]
+
+    def matches(self, text: str) -> bool:
+        return any(p.search(text) for p in self.patterns)
+
+
+@dataclass(frozen=True)
+class LevelSpec:
+    label: str
+    disposition: str
+    logged: bool
+
+
+@dataclass(frozen=True)
+class EscalationRule:
+    level: RiskLevel
+    domains: frozenset[RiskDomain]
+
+
+@dataclass(frozen=True)
+class RiskModel:
+    name: str
+    default_level: RiskLevel
+    levels: dict[RiskLevel, LevelSpec]
+    detectors: tuple[Detector, ...]
+    unauthenticated: EscalationRule
+    governance_minimum: EscalationRule
+    low_confidence_minimum: EscalationRule
+    low_confidence_threshold: float
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> RiskModel:
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RiskModelError(f"cannot read risk model at {path}: {exc}") from exc
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RiskModel:
+        try:
+            levels = {
+                RiskLevel(key): LevelSpec(
+                    label=spec.get("label", ""),
+                    disposition=spec["disposition"],
+                    logged=bool(spec.get("logged", True)),
+                )
+                for key, spec in data["levels"].items()
+            }
+
+            detectors: list[Detector] = []
+            for raw in data.get("detectors", ()):
+                detectors.append(
+                    Detector(
+                        id=raw["id"],
+                        level=RiskLevel(raw["level"]),
+                        domains=_domains(raw.get("domains", ())),
+                        patterns=tuple(
+                            re.compile(p, re.IGNORECASE) for p in raw["patterns"]
+                        ),
+                    )
+                )
+            for raw in data.get("structuralDetectors", ()):
+                detectors.append(
+                    Detector(
+                        id=raw["id"],
+                        level=RiskLevel(raw["level"]),
+                        domains=_domains(raw.get("domains", ())),
+                        # Structural shapes are case-sensitive by design.
+                        patterns=(re.compile(raw["pattern"]),),
+                    )
+                )
+
+            rules = data.get("rules", {})
+            return cls(
+                name=data.get("riskModelName", "unnamed"),
+                default_level=RiskLevel(data.get("defaultLevel", "L0")),
+                levels=levels,
+                detectors=tuple(detectors),
+                unauthenticated=_rule(rules.get("unauthenticated"), RiskLevel.L4),
+                governance_minimum=_rule(
+                    rules.get("governanceChangeMinimum"), RiskLevel.L3
+                ),
+                low_confidence_minimum=_rule(
+                    rules.get("lowConfidenceMinimum"), RiskLevel.L1
+                ),
+                low_confidence_threshold=float(
+                    rules.get("lowConfidenceThreshold", 0.3)
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RiskModelError(f"malformed risk model: {exc}") from exc
+
+    def disposition_for(self, level: RiskLevel) -> str:
+        spec = self.levels.get(level)
+        if spec is None:
+            raise RiskModelError(f"no level spec configured for {level.value}")
+        return spec.disposition
+
+
+def _domains(values: Any) -> frozenset[RiskDomain]:
+    return frozenset(RiskDomain(v) for v in values)
+
+
+def _rule(raw: dict[str, Any] | None, fallback: RiskLevel) -> EscalationRule:
+    if not raw:
+        return EscalationRule(level=fallback, domains=frozenset())
+    return EscalationRule(
+        level=RiskLevel(raw.get("level", fallback.value)),
+        domains=_domains(raw.get("domains", ())),
+    )
 
 
 class RiskEngine:
-    """Assigns a RiskLevel by escalation — highest detector wins."""
+    """Assigns a level and domains by escalation — highest level wins."""
+
+    def __init__(self, model: RiskModel | None = None) -> None:
+        if model is None:
+            from .config import DEFAULT_RISK_MODEL_PATH
+
+            model = RiskModel.from_file(DEFAULT_RISK_MODEL_PATH)
+        self.model = model
 
     def assess(
         self,
@@ -111,42 +168,47 @@ class RiskEngine:
         classification: Classification,
     ) -> RiskAssessment:
         text = request.content
+        level = self.model.default_level
+        domains: set[RiskDomain] = set()
         triggers: list[str] = []
-        level = RiskLevel.LOW
 
-        def escalate(to: RiskLevel, reasons: list[str], label: str) -> None:
-            nonlocal level, triggers
-            if not reasons:
-                return
-            triggers.extend(f"{label}:{r}" for r in reasons)
-            if to.rank > level.rank:
-                level = to
+        def escalate(rule_level: RiskLevel, rule_domains: frozenset[RiskDomain]) -> None:
+            nonlocal level
+            if rule_level > level:
+                level = rule_level
+            domains.update(rule_domains)
 
-        # A governance change is at minimum SENSITIVE — it alters the rules the
-        # rest of the system is judged against.
+        for detector in self.model.detectors:
+            if detector.matches(text):
+                triggers.append(f"detector:{detector.id}")
+                escalate(detector.level, detector.domains)
+
+        # A governance change alters the rules everything else is judged against.
         if classification.request_type is RequestType.GOVERNANCE_CHANGE:
             triggers.append("classification:governance_change")
-            level = RiskLevel.SENSITIVE
+            escalate(
+                self.model.governance_minimum.level,
+                self.model.governance_minimum.domains,
+            )
 
-        escalate(RiskLevel.STANDARD, _hits(text, _STANDARD_PATTERNS), "standard")
-        escalate(RiskLevel.SENSITIVE, _hits(text, _SENSITIVE_PATTERNS), "sensitive")
-
-        pii_found = [
-            name for name, shape in _PII_SHAPES if re.search(shape, text)
-        ]
-        escalate(RiskLevel.SENSITIVE, pii_found, "pii")
-
-        escalate(RiskLevel.COMPLIANCE, _hits(text, _COMPLIANCE_PATTERNS), "compliance")
-        escalate(RiskLevel.SECURITY, _hits(text, _SECURITY_PATTERNS), "security")
+        # An unclassifiable request does not get to sit at the floor.
+        if classification.confidence < self.model.low_confidence_threshold:
+            triggers.append("classification:low_confidence")
+            escalate(
+                self.model.low_confidence_minimum.level,
+                self.model.low_confidence_minimum.domains,
+            )
 
         # An unauthenticated caller is a security concern in its own right.
         if not request.identity.authenticated:
             triggers.append("identity:unauthenticated")
-            level = RiskLevel.SECURITY
+            escalate(
+                self.model.unauthenticated.level,
+                self.model.unauthenticated.domains,
+            )
 
-        # A request we could not confidently classify does not get to be LOW.
-        if classification.confidence < 0.3 and level is RiskLevel.LOW:
-            triggers.append("classification:low_confidence")
-            level = RiskLevel.STANDARD
-
-        return RiskAssessment(level=level, triggers=tuple(triggers))
+        return RiskAssessment(
+            level=level,
+            domains=frozenset(domains),
+            triggers=tuple(triggers),
+        )

@@ -22,16 +22,18 @@ from .models import (
     Execution,
     Identity,
     Outcome,
+    PolicyDecision,
     PolicyViolation,
     Request,
     RequestType,
     RiskAssessment,
+    RiskDomain,
     RiskLevel,
     RoutingDecision,
 )
-from .policy import Policy, PolicyEngine, PolicySet
-from .risk import RiskEngine
-from .routing import Router
+from .policy import Policy, PolicyEffects, PolicyEngine, PolicyScope, PolicySet
+from .risk import RiskEngine, RiskModel
+from .routing import Router, authorize, candidate_agent
 
 __version__ = "0.1.0"
 
@@ -42,6 +44,8 @@ __all__ = [
     "AuditEvent",
     "AuditSink",
     "AuditStage",
+    "authorize",
+    "candidate_agent",
     "Classification",
     "ConfigError",
     "ControlPlane",
@@ -53,14 +57,19 @@ __all__ = [
     "ModelAssistedClassifier",
     "Outcome",
     "Policy",
+    "PolicyDecision",
+    "PolicyEffects",
     "PolicyEngine",
+    "PolicyScope",
     "PolicySet",
     "PolicyViolation",
     "Request",
     "RequestType",
     "RiskAssessment",
+    "RiskDomain",
     "RiskEngine",
     "RiskLevel",
+    "RiskModel",
     "Router",
     "RoutingDecision",
     "RuleClassifier",

@@ -27,7 +27,7 @@ from .policy import PolicyEngine, PolicySet
 from .providers.base import ModelProvider, ProviderError
 from .providers.mock import MockProvider
 from .risk import RiskEngine
-from .routing import Router
+from .routing import Router, authorize, candidate_agent
 
 # An approval handler receives the in-progress outcome and returns a decision.
 # In a deployment this is a Teams adaptive card, a Power Automate flow, or a
@@ -54,7 +54,9 @@ class ControlPlane:
         router: Router | None = None,
         audit_sink: AuditSink | None = None,
         approval_handler: ApprovalHandler | None = None,
+        environment: str = "dev",
     ) -> None:
+        self.environment = environment
         self.provider = provider or MockProvider()
         self.classifier = classifier or RuleClassifier()
         self.risk_engine = risk_engine or RiskEngine()
@@ -102,20 +104,37 @@ class ControlPlane:
             request.id,
             AuditStage.RISK_ASSESSED,
             subject,
-            level=risk.level.value,
+            **risk.to_dict(),
             triggers=list(risk.triggers),
         )
 
-        violations = self.policy_engine.evaluate(request, classification, risk)
+        agent = candidate_agent(classification)
+        violations = authorize(request, classification)
+        trail.emit(
+            request.id,
+            AuditStage.AUTHORIZED,
+            subject,
+            failure_count=len(violations),
+            failures=[v.detail for v in violations],
+        )
+
+        policy = self.policy_engine.evaluate(
+            request,
+            classification,
+            risk,
+            agent=agent,
+            environment=self.environment,
+        )
         trail.emit(
             request.id,
             AuditStage.POLICY_EVALUATED,
             subject,
-            violation_count=len(violations),
-            violations=[v.detail for v in violations],
+            **policy.to_dict(),
         )
 
-        routing = self.router.route(request, classification, risk, violations)
+        routing = self.router.route(
+            request, classification, risk, violations, policy
+        )
         trail.emit(
             request.id,
             AuditStage.ROUTED,
@@ -131,6 +150,7 @@ class ControlPlane:
             risk=risk,
             routing=routing,
             violations=violations,
+            policy=policy,
         )
 
         if routing.disposition is Disposition.BLOCKED:

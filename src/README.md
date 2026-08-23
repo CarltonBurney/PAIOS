@@ -17,7 +17,7 @@ pip install -e '.[dev]'
 pytest
 ```
 
-20 tests, no Azure account required — the default provider is a deterministic
+29 tests, no Azure account required — the default provider is a deterministic
 mock.
 
 ## Try it
@@ -35,7 +35,7 @@ request = Request(
 outcome = cp.handle(request)
 
 print(outcome.classification.request_type)   # RequestType.TECHNICAL
-print(outcome.risk.level)                    # RiskLevel.LOW
+print(outcome.risk.to_dict())                # {'risk_level': 'L1', 'risk_domains': []}
 print(outcome.routing.disposition)           # Disposition.AUTO_EXECUTE
 print(len(sink.events))                      # full audit trail
 ```
@@ -49,8 +49,10 @@ request = Request(
 )
 outcome = cp.handle(request)
 
-print(outcome.risk.level)             # RiskLevel.SECURITY
+print(outcome.risk.to_dict())
+# {'risk_level': 'L4', 'risk_domains': ['security']}
 print(outcome.routing.disposition)    # Disposition.ADMIN_ESCALATION
+print(outcome.policy.matched)         # ('PAIOS-SEC-001', ...) in prod
 print(outcome.delivered)              # False — no approval handler configured
 ```
 
@@ -75,8 +77,12 @@ a managed identity in Azure. No key is read from source or from `.env`.
 
 ## Design properties worth keeping
 
-- **Risk escalates, never de-escalates.** The highest detector wins; levels do
-  not average out.
+- **Risk has two axes.** `risk_level` (L0–L4) is impact; `risk_domains` are
+  kinds of concern. A request can be L3 in both security and compliance.
+- **Risk escalates, never de-escalates.** The highest detector wins and domains
+  accumulate; levels do not average out.
+- **Policy narrows, never widens.** Allow-lists intersect and denials union, so
+  adding a policy can only reduce what a caller may do.
 - **Governance classification is one-way.** A model can refine an ambiguous
   request but can never reclassify a `governance_change` into something
   routine.
