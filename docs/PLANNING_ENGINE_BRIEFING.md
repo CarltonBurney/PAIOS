@@ -160,6 +160,107 @@ policy should be able to deny outright, the schema needs that effect.
 **Superseded:** `policies/sample-governance-policies.json` remains in the tree
 as the documented artifact from `main` but is no longer loaded.
 
+### 2.5 Domain matching — **CONFIRMED**
+
+Overlap semantics, by default and formally:
+
+```
+policy_domains ∩ request_domains ≠ ∅
+```
+
+The bare array always means *any_of*. A future schema revision may add explicit
+`any_of` / `all_of` / `none_of` operators; until then the array must never be
+silently reinterpreted as exact equality.
+
+### 2.6 Authorization vs Policy — **CONFIRMED, separate layers**
+
+| Layer | Question | Runs |
+|---|---|---|
+| **Authorization** | Is this identity entitled to attempt this class of operation? | Before classification |
+| **Policy** | May this specific, otherwise-authorized request proceed under current governance conditions? | After risk assessment |
+
+Authorization is now identity-only and runs first, per the canonical pipeline.
+The governance-role check that previously lived there has moved to policy as a
+`deny` (`PAIOS-GOV-002`), because it is contextual: authorization cannot know a
+request is a governance change before classification has run.
+
+Canonical pipeline, now implemented:
+
+```
+Authentication → Identity Resolution → Authorization → Classification →
+Risk Assessment → Policy Evaluation → Approval Gate → Tool/Workflow Execution →
+Output Validation → Audit
+```
+
+### 2.7 Policy decision — **ADDED**
+
+`effects.decision` is a constrained enum, resolved across every matching policy
+by precedence:
+
+```
+deny  >  require_approval  >  allow_with_controls  >  allow
+```
+
+Any applicable `deny` wins; approval can never override it. Effects also carry
+`reason_code`, surfaced on the decision and in the audit record.
+
+The legacy boolean `require_approval` is still honoured for existing policy
+documents, but it can only ever *raise* the outcome, never lower it.
+
+**Extension made during implementation, flagged for confirmation:** policy
+conditions gained `request_types` and `principal_roles_none_of`. The latter
+fires only when the principal holds *none* of the listed roles, and is what
+lets a role-based refusal be expressed as policy rather than authorization. It
+is beyond the supplied schema and is called out here rather than assumed.
+
+### 2.8 Tool Registry — **ADDED**
+
+`policies/tool-registry.json`, loaded by `paios.tools.ToolRegistry`. All
+specified minimum fields are implemented. Extension points are parsed and
+carried under `constraints` — environments, data classifications, network
+destinations, timeout, retries, rate limits, idempotency, caller types, allowed
+agents, allowed workflows — of which environments and caller types are enforced
+today; the remainder are declared so registry documents can express them
+without a later schema migration.
+
+Agents may reference registered tools. Agents cannot create executable tool
+identities: an unregistered `tool_id` is not a tool, and the gateway rejects it.
+
+The five entries exist to prove the enforcement path. They are **not** a
+business tool catalog, which is deliberately out of scope for this slice.
+
+### 2.9 Execution Gateway — **IMPLEMENTED (minimum enforcement)**
+
+`paios.execution.ExecutionGateway` is now the only path to a handler. It
+re-validates independently rather than trusting that a caller consulted policy:
+a caller who never called `permits_tool()` gets the same answer as one who did.
+
+Rejects, each with a distinct `RejectionReason` and an audit event: unknown
+tool, disabled tool, policy `deny`, tool denied by policy, approval required,
+approval not granted, missing role, missing scope, environment not permitted,
+caller type not permitted, arguments outside the registered contract, no
+handler, handler error.
+
+Every attempt — allowed or rejected — emits an audit event carrying the
+correlation ID. `permits_tool()` remains a policy *decision*, documented as
+such at the call site; the gateway is the security boundary.
+
+### 2.10 Documentation migration — **DONE**
+
+`architecture/workflows/request-classification-flow.md` and
+`docs/PAIOS_CONTROL_PLANE.md` now describe the two-axis model, the decision
+precedence, the authorization/policy split, and the canonical pipeline. Both
+carry the migration note. The old taxonomy survives in Git history only.
+
+### 2.11 Locked design rule — risk never authorizes execution
+
+A request being `L0` or `L1` does not make a tool permissible. Risk, identity
+and authorization, policy, tool registration, and approval are separate inputs
+to the final execution decision. `if risk_level <= L1: execute()` is
+specifically prohibited; the rule is stated in `policy.py`, `execution.py`, and
+both reconciled documents, and is covered by tests.
+
+
 ---
 
 ## 3. What exists on this branch
@@ -185,10 +286,20 @@ src/paios/
     mock.py            deterministic test provider
     foundry.py         Azure AI Foundry (DefaultAzureCredential)
 tests/
-  test_control_plane.py  29 tests, all passing
+  audit.py             append-only audit trail, correlation IDs
+  tools.py             Tool Registry
+  execution.py         Execution Gateway (enforcement boundary)
+  control_plane.py     the pipeline
+  config.py            environment configuration
+  providers/
+tests/
+  test_control_plane.py      pipeline
+  test_policy_decisions.py   precedence + domain matching
+  test_execution_gateway.py  registry + enforcement
+                             87 tests total, all passing
 ```
 
-Verified state: `ruff check` clean, `pytest` 29/29 passing on Python 3.11
+Verified state: `ruff check` clean, `pytest` 87/87 passing on Python 3.11
 (package targets 3.12+).
 
 ### 3.1 How to treat it
@@ -278,8 +389,14 @@ authentication uses `DefaultAzureCredential` (managed identity in Azure,
 4. Whether the existing `architecture/` and `docs/` files are updated to match
    the specification, or superseded and archived. Still open, and now overdue:
    they describe a risk taxonomy the code no longer implements.
-5. Whether policy needs a `deny` effect, or whether outright refusal stays in
-   the authorization layer (§2.4).
-6. The tool namespace. Policies already reference tools by name
-   (`security_read`, `security_write`, `bulk_export`); nothing yet defines what
-   tools exist or who registers them.
+5. ~~Whether policy needs a `deny` effect~~ — **resolved**, added (§2.7).
+6. ~~The tool namespace~~ — **resolved**, Tool Registry is first-class (§2.8).
+7. **Next slice:** Agent Registry, Model Registry, and Workflow Registry, plus
+   the common registry lifecycle they should all share — registration,
+   versioning, enable/disable, ownership, promotion, retirement, audit. The
+   Tool Registry is currently the only registry and was built standalone; the
+   lifecycle pattern should be defined once and applied to all four rather than
+   letting each evolve its own.
+8. Confirm the `principal_roles_none_of` / `request_types` condition extension
+   (§2.7), which was added during implementation and is not in the supplied
+   schema.

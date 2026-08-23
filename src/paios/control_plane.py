@@ -89,6 +89,15 @@ class ControlPlane:
             roles=sorted(request.identity.roles),
         )
 
+        violations = authorize(request)
+        trail.emit(
+            request.id,
+            AuditStage.AUTHORIZED,
+            subject,
+            failure_count=len(violations),
+            failures=[v.detail for v in violations],
+        )
+
         classification = self.classifier.classify(request)
         trail.emit(
             request.id,
@@ -109,15 +118,6 @@ class ControlPlane:
         )
 
         agent = candidate_agent(classification)
-        violations = authorize(request, classification)
-        trail.emit(
-            request.id,
-            AuditStage.AUTHORIZED,
-            subject,
-            failure_count=len(violations),
-            failures=[v.detail for v in violations],
-        )
-
         policy = self.policy_engine.evaluate(
             request,
             classification,

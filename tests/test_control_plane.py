@@ -29,6 +29,11 @@ def make_request(content: str, **identity_kwargs) -> Request:
     )
 
 
+# An L3 security request: matches PAIOS-SEC-001 (approval) but not
+# PAIOS-SEC-002, which denies only at L4.
+L3_SECURITY = "assess GDPR obligations for the access control model"
+
+
 def approve(approver: str = "manager@contoso.com"):
     return lambda _outcome: Approval(
         state=ApprovalState.APPROVED, approver=approver, note="ok"
@@ -149,12 +154,21 @@ class TestAuthorization:
         assert provider.calls == []
 
     def test_governance_change_requires_a_governance_role(self):
+        """Now a policy DENY, not an authorization failure.
+
+        Authorization is identity-only and runs before classification, so it
+        cannot know this is a governance change. The refusal is contextual,
+        which makes it policy's job.
+        """
         cp = ControlPlane(approval_handler=approve())
         outcome = cp.handle(make_request("change the approval workflow policy"))
 
         assert outcome.classification.request_type is RequestType.GOVERNANCE_CHANGE
         assert outcome.blocked
-        assert outcome.violations
+        assert outcome.policy.denied
+        assert "GOVERNANCE_ROLE_REQUIRED" in outcome.policy.reason_codes
+        # Authorization passed — the caller was authenticated.
+        assert not outcome.violations
 
     def test_governance_admin_still_needs_human_approval(self):
         cp = ControlPlane(approval_handler=approve())
@@ -177,7 +191,7 @@ class TestAuthorization:
 class TestPolicyEngine:
     def test_security_policy_matches_in_prod_only(self):
         """PAIOS-SEC-001 is scoped to prod; dev must not match it."""
-        content = "grant admin permissions to the contractor"
+        content = L3_SECURITY
 
         prod = ControlPlane(environment="prod", approval_handler=approve())
         dev = ControlPlane(environment="dev", approval_handler=approve())
@@ -187,24 +201,24 @@ class TestPolicyEngine:
 
     def test_matching_policy_raises_audit_level_to_full(self):
         cp = ControlPlane(environment="prod", approval_handler=approve())
-        outcome = cp.handle(make_request("grant admin permissions to the contractor"))
+        outcome = cp.handle(make_request(L3_SECURITY))
         assert outcome.policy.audit_level == "full"
 
     def test_denied_tool_is_refused(self):
         cp = ControlPlane(environment="prod", approval_handler=approve())
-        outcome = cp.handle(make_request("grant admin permissions to the contractor"))
+        outcome = cp.handle(make_request(L3_SECURITY))
 
         assert not outcome.policy.permits_tool("security_write")
         assert outcome.policy.permits_tool("security_read")
 
     def test_allow_list_excludes_unlisted_tools(self):
         cp = ControlPlane(environment="prod", approval_handler=approve())
-        outcome = cp.handle(make_request("grant admin permissions to the contractor"))
+        outcome = cp.handle(make_request(L3_SECURITY))
         assert not outcome.policy.permits_tool("some_other_tool")
 
     def test_policy_can_force_approval(self):
         cp = ControlPlane(environment="prod", approval_handler=approve())
-        outcome = cp.handle(make_request("grant admin permissions to the contractor"))
+        outcome = cp.handle(make_request(L3_SECURITY))
 
         assert outcome.policy.require_approval
         assert outcome.routing.requires_human

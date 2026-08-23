@@ -1,25 +1,141 @@
 {
   "policySetName": "PAIOS Governance Policies v1.0",
-  "description": "Declarative governance policies. Each policy is scoped, conditioned on the two-axis risk model, and carries effects. Effects merge across all matching policies: require_approval ORs, denied_tools unions, allowed_tools intersects (least privilege), audit_level takes the maximum.",
+  "description": "Declarative governance policies. Each policy is scoped, conditioned on the two-axis risk model, and carries a decision plus effects. The decision enum is allow | allow_with_controls | require_approval | deny, resolved by precedence deny > require_approval > allow_with_controls > allow. Any applicable deny wins, and approval can never override it. Tool effects merge least-privilege: denied_tools union, allowed_tools intersect, audit_level maximum.",
   "policies": [
+    {
+      "policy_id": "PAIOS-SEC-002",
+      "enabled": true,
+      "priority": 200,
+      "scope": {
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "prod"
+        ]
+      },
+      "conditions": {
+        "risk_level": [
+          "L4"
+        ],
+        "risk_domains": [
+          "security"
+        ]
+      },
+      "effects": {
+        "decision": "deny",
+        "allowed_tools": [],
+        "denied_tools": [
+          "*"
+        ],
+        "audit_level": "full",
+        "reason_code": "PROHIBITED_OPERATION"
+      }
+    },
+    {
+      "policy_id": "PAIOS-GOV-002",
+      "enabled": true,
+      "priority": 200,
+      "scope": {
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "*"
+        ]
+      },
+      "conditions": {
+        "request_types": [
+          "governance_change"
+        ],
+        "principal_roles_none_of": [
+          "governance_admin",
+          "admin"
+        ]
+      },
+      "effects": {
+        "decision": "deny",
+        "allowed_tools": [],
+        "denied_tools": [
+          "*"
+        ],
+        "audit_level": "full",
+        "reason_code": "GOVERNANCE_ROLE_REQUIRED"
+      }
+    },
+    {
+      "policy_id": "PAIOS-DATA-001",
+      "enabled": true,
+      "priority": 150,
+      "scope": {
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "prod"
+        ]
+      },
+      "conditions": {
+        "risk_level": [
+          "L3",
+          "L4"
+        ],
+        "risk_domains": [
+          "privacy"
+        ]
+      },
+      "effects": {
+        "decision": "deny",
+        "denied_tools": [
+          "bulk_export"
+        ],
+        "audit_level": "full",
+        "reason_code": "DATA_HANDLING_VIOLATION"
+      }
+    },
     {
       "policy_id": "PAIOS-SEC-001",
       "enabled": true,
       "priority": 100,
       "scope": {
-        "departments": ["*"],
-        "agents": ["*"],
-        "environments": ["prod"]
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "prod"
+        ]
       },
       "conditions": {
-        "risk_level": ["L3", "L4"],
-        "risk_domains": ["security"]
+        "risk_level": [
+          "L3",
+          "L4"
+        ],
+        "risk_domains": [
+          "security"
+        ]
       },
       "effects": {
-        "require_approval": true,
-        "allowed_tools": ["security_read"],
-        "denied_tools": ["security_write"],
-        "audit_level": "full"
+        "allowed_tools": [
+          "security_read"
+        ],
+        "denied_tools": [
+          "security_write"
+        ],
+        "audit_level": "full",
+        "decision": "require_approval",
+        "reason_code": "PAIOS-SEC-001_APPROVAL"
       }
     },
     {
@@ -27,18 +143,32 @@
       "enabled": true,
       "priority": 90,
       "scope": {
-        "departments": ["*"],
-        "agents": ["*"],
-        "environments": ["*"]
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "*"
+        ]
       },
       "conditions": {
-        "risk_level": ["L3", "L4"],
-        "risk_domains": ["privacy"]
+        "risk_level": [
+          "L3",
+          "L4"
+        ],
+        "risk_domains": [
+          "privacy"
+        ]
       },
       "effects": {
-        "require_approval": true,
-        "denied_tools": ["bulk_export"],
-        "audit_level": "full"
+        "denied_tools": [
+          "bulk_export"
+        ],
+        "audit_level": "full",
+        "decision": "require_approval",
+        "reason_code": "PAIOS-PRIV-001_APPROVAL"
       }
     },
     {
@@ -46,16 +176,25 @@
       "enabled": true,
       "priority": 80,
       "scope": {
-        "departments": ["*"],
-        "agents": ["*"],
-        "environments": ["*"]
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "*"
+        ]
       },
       "conditions": {
-        "risk_domains": ["governance"]
+        "risk_domains": [
+          "governance"
+        ]
       },
       "effects": {
-        "require_approval": true,
-        "audit_level": "full"
+        "audit_level": "full",
+        "decision": "require_approval",
+        "reason_code": "PAIOS-GOV-001_APPROVAL"
       }
     },
     {
@@ -63,13 +202,20 @@
       "enabled": true,
       "priority": 0,
       "scope": {
-        "departments": ["*"],
-        "agents": ["*"],
-        "environments": ["*"]
+        "departments": [
+          "*"
+        ],
+        "agents": [
+          "*"
+        ],
+        "environments": [
+          "*"
+        ]
       },
       "conditions": {},
       "effects": {
-        "audit_level": "standard"
+        "audit_level": "standard",
+        "decision": "allow"
       }
     }
   ]

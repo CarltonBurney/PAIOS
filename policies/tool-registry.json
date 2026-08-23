@@ -1,0 +1,129 @@
+{
+  "registryName": "PAIOS Tool Registry v1.0",
+  "description": "Authoritative set of governed tools. A tool that is not registered here cannot be invoked. Agents may reference these tool_ids; agents may not create executable tool identities. These entries exist to prove the registry -> policy -> gateway enforcement path; they are not a business tool catalog.",
+  "tools": [
+    {
+      "tool_id": "security_read",
+      "version": "1.0.0",
+      "enabled": true,
+      "owner": "security",
+      "description": "Read-only lookup of security configuration.",
+      "operation_type": "read",
+      "risk_level": "L2",
+      "risk_domains": ["security"],
+      "required_roles": [],
+      "required_scopes": [],
+      "approval_policy": null,
+      "input_schema": {
+        "type": "object",
+        "properties": { "resource_id": { "type": "string" } }
+      },
+      "output_schema": { "type": "object" },
+      "handler": "paios.tools.security.read",
+      "audit_level": "full",
+      "constraints": {
+        "environments": ["*"],
+        "caller_types": ["human", "agent", "workflow"],
+        "idempotent": true,
+        "timeout_seconds": 10
+      }
+    },
+    {
+      "tool_id": "security_write",
+      "version": "1.0.0",
+      "enabled": true,
+      "owner": "security",
+      "description": "Mutates security configuration. Requires approval.",
+      "operation_type": "write",
+      "risk_level": "L4",
+      "risk_domains": ["security"],
+      "required_roles": ["security_admin"],
+      "required_scopes": ["security.write"],
+      "approval_policy": "PAIOS-SEC-001",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "resource_id": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      },
+      "output_schema": { "type": "object" },
+      "handler": "paios.tools.security.write",
+      "audit_level": "full",
+      "constraints": {
+        "environments": ["dev", "test", "prod"],
+        "caller_types": ["human"],
+        "idempotent": false,
+        "max_retries": 0
+      }
+    },
+    {
+      "tool_id": "bulk_export",
+      "version": "1.0.0",
+      "enabled": true,
+      "owner": "data_governance",
+      "description": "Bulk data export. Denied by data-handling policy in prod.",
+      "operation_type": "read",
+      "risk_level": "L4",
+      "risk_domains": ["privacy", "compliance"],
+      "required_roles": ["data_steward"],
+      "required_scopes": ["data.export"],
+      "approval_policy": "PAIOS-PRIV-001",
+      "input_schema": {
+        "type": "object",
+        "properties": { "dataset": { "type": "string" } }
+      },
+      "output_schema": { "type": "object" },
+      "handler": "paios.tools.data.bulk_export",
+      "audit_level": "full",
+      "constraints": {
+        "environments": ["dev", "test"],
+        "caller_types": ["human"],
+        "idempotent": true
+      }
+    },
+    {
+      "tool_id": "legacy_report",
+      "version": "0.9.0",
+      "enabled": false,
+      "owner": "operations",
+      "description": "Retired reporting tool. Retained to prove disabled tools cannot execute.",
+      "operation_type": "read",
+      "risk_level": "L1",
+      "risk_domains": ["operational"],
+      "required_roles": [],
+      "required_scopes": [],
+      "approval_policy": null,
+      "input_schema": { "type": "object", "properties": {} },
+      "output_schema": { "type": "object" },
+      "handler": "paios.tools.reporting.legacy",
+      "audit_level": "standard",
+      "constraints": { "environments": ["*"] }
+    },
+    {
+      "tool_id": "directory_read",
+      "version": "1.0.0",
+      "enabled": true,
+      "owner": "platform",
+      "description": "Low-risk directory lookup. Proves the allowed path end to end.",
+      "operation_type": "read",
+      "risk_level": "L0",
+      "risk_domains": [],
+      "required_roles": [],
+      "required_scopes": [],
+      "approval_policy": null,
+      "input_schema": {
+        "type": "object",
+        "properties": { "user_id": { "type": "string" } }
+      },
+      "output_schema": { "type": "object" },
+      "handler": "paios.tools.directory.read",
+      "audit_level": "standard",
+      "constraints": {
+        "environments": ["*"],
+        "caller_types": ["human", "agent", "workflow"],
+        "idempotent": true
+      }
+    }
+  ]
+}

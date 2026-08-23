@@ -23,6 +23,7 @@ from typing import Any, Protocol
 class AuditStage(str, Enum):
     RECEIVED = "received"
     IDENTITY_CHECKED = "identity_checked"
+    IDENTITY_RESOLVED = "identity_resolved"
     AUTHORIZED = "authorized"
     CLASSIFIED = "classified"
     RISK_ASSESSED = "risk_assessed"
@@ -31,6 +32,8 @@ class AuditStage(str, Enum):
     APPROVAL_REQUESTED = "approval_requested"
     APPROVAL_DECIDED = "approval_decided"
     EXECUTED = "executed"
+    EXECUTION_ALLOWED = "execution_allowed"
+    EXECUTION_REJECTED = "execution_rejected"
     OUTPUT_REVIEWED = "output_reviewed"
     BLOCKED = "blocked"
     ERROR = "error"

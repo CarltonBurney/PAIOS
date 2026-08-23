@@ -6,7 +6,9 @@ and carries effects (approval requirement, tool permissions, audit level).
 
 Merge semantics, applied across every policy that matches:
 
-- ``require_approval`` — logical OR. Any policy demanding approval wins.
+- ``decision``         — strongest wins, by the precedence
+  ``deny > require_approval > allow_with_controls > allow``. A deny from any
+  applicable policy is final; approval can never override it.
 - ``denied_tools``     — union. A denial anywhere is a denial everywhere.
 - ``allowed_tools``    — intersection of every allow-list that is specified.
   A policy with no allow-list imposes no constraint; a policy with one narrows
@@ -17,6 +19,15 @@ Merge semantics, applied across every policy that matches:
 Policies are evaluated in descending ``priority`` for deterministic reporting,
 but the merge itself is order-independent by construction, so two policies at
 the same priority cannot produce different results depending on file order.
+
+DESIGN RULE — risk never authorizes execution.
+----------------------------------------------
+A low risk level is not permission. ``RiskLevel`` is one *input* to the policy
+decision, alongside identity, environment, and the tool contract; it is never
+a shortcut past them. Code of the shape ``if risk <= L1: execute()`` would
+collapse the control plane into a scoring function and must not be written.
+Execution is authorized only by the Execution Gateway, which re-validates
+independently of whatever risk said.
 """
 
 from __future__ import annotations
@@ -31,7 +42,9 @@ from .models import (
     Classification,
     Identity,
     PolicyDecision,
+    PolicyOutcome,
     Request,
+    RequestType,
     RiskAssessment,
     RiskDomain,
     RiskLevel,
@@ -76,27 +89,55 @@ class PolicyScope:
 
 @dataclass(frozen=True)
 class PolicyConditions:
-    """Empty condition sets mean "any" — an unconditioned policy always fires."""
+    """Empty condition sets mean "any" — an unconditioned policy always fires.
+
+    ``risk_domains`` matches on OVERLAP, never exact equality: a policy scoped
+    to ``["security"]`` fires on a request carrying
+    ``["security", "compliance"]``. Formally::
+
+        policy_domains ∩ request_domains ≠ ∅
+
+    A future schema revision may add explicit ``any_of`` / ``all_of`` /
+    ``none_of`` operators. Until then the bare array always means any_of, and
+    must never be silently reinterpreted as exact equality.
+    """
 
     risk_level: frozenset[RiskLevel] = frozenset()
     risk_domains: frozenset[RiskDomain] = frozenset()
+    request_types: frozenset[RequestType] = frozenset()
+    principal_roles_none_of: frozenset[str] = frozenset()
 
-    def matches(self, risk: RiskAssessment) -> bool:
+    def matches(
+        self,
+        risk: RiskAssessment,
+        classification: Classification | None = None,
+        identity: Identity | None = None,
+    ) -> bool:
         if self.risk_level and risk.level not in self.risk_level:
             return False
-        # Domains match on overlap: a policy scoped to "security" fires on a
-        # request that is both a security and a compliance matter.
         if self.risk_domains and not (self.risk_domains & risk.domains):
             return False
+        if self.request_types:
+            if classification is None:
+                return False
+            if classification.request_type not in self.request_types:
+                return False
+        if self.principal_roles_none_of:
+            if identity is None:
+                return False
+            # Fires only when the principal holds NONE of the listed roles.
+            if identity.roles & self.principal_roles_none_of:
+                return False
         return True
 
 
 @dataclass(frozen=True)
 class PolicyEffects:
-    require_approval: bool = False
+    decision: PolicyOutcome = PolicyOutcome.ALLOW
     allowed_tools: tuple[str, ...] = ()
     denied_tools: tuple[str, ...] = ()
     audit_level: str = "standard"
+    reason_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +162,20 @@ class Policy:
                     f"audit_level must be one of {_AUDIT_ORDER}, got {audit_level!r}"
                 )
 
+            # `decision` is authoritative. The older boolean `require_approval`
+            # is still honoured so existing policy documents keep working, but
+            # it can only ever raise the outcome, never lower it.
+            if "decision" in eff_raw:
+                decision = PolicyOutcome(eff_raw["decision"])
+                if eff_raw.get("require_approval") and decision.precedence < (
+                    PolicyOutcome.REQUIRE_APPROVAL.precedence
+                ):
+                    decision = PolicyOutcome.REQUIRE_APPROVAL
+            elif eff_raw.get("require_approval"):
+                decision = PolicyOutcome.REQUIRE_APPROVAL
+            else:
+                decision = PolicyOutcome.ALLOW
+
             return cls(
                 policy_id=data["policy_id"],
                 enabled=bool(data.get("enabled", True)),
@@ -137,12 +192,19 @@ class Policy:
                     risk_domains=frozenset(
                         RiskDomain(v) for v in cond_raw.get("risk_domains", ())
                     ),
+                    request_types=frozenset(
+                        RequestType(v) for v in cond_raw.get("request_types", ())
+                    ),
+                    principal_roles_none_of=frozenset(
+                        cond_raw.get("principal_roles_none_of", ())
+                    ),
                 ),
                 effects=PolicyEffects(
-                    require_approval=bool(eff_raw.get("require_approval", False)),
+                    decision=decision,
                     allowed_tools=tuple(eff_raw.get("allowed_tools", ())),
                     denied_tools=tuple(eff_raw.get("denied_tools", ())),
                     audit_level=audit_level,
+                    reason_code=eff_raw.get("reason_code"),
                 ),
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -201,7 +263,8 @@ class PolicyEngine:
         )
 
         matched: list[str] = []
-        require_approval = False
+        reason_codes: list[str] = []
+        outcomes: list[PolicyOutcome] = []
         allowed: frozenset[str] | None = None
         denied: set[str] = set()
         audit_rank = 0
@@ -213,13 +276,18 @@ class PolicyEngine:
                 environment=environment,
             ):
                 continue
-            if not policy.conditions.matches(risk):
+            if not policy.conditions.matches(
+                risk, classification, request.identity
+            ):
                 continue
 
             matched.append(policy.policy_id)
             effects = policy.effects
+            outcomes.append(effects.decision)
 
-            require_approval = require_approval or effects.require_approval
+            if effects.reason_code:
+                reason_codes.append(effects.reason_code)
+
             denied.update(effects.denied_tools)
 
             if effects.allowed_tools:
@@ -229,8 +297,9 @@ class PolicyEngine:
             audit_rank = max(audit_rank, _AUDIT_ORDER.index(effects.audit_level))
 
         return PolicyDecision(
+            decision=PolicyOutcome.strongest(outcomes),
             matched=tuple(matched),
-            require_approval=require_approval,
+            reason_codes=tuple(dict.fromkeys(reason_codes)),
             allowed_tools=allowed,
             denied_tools=frozenset(denied),
             audit_level=_AUDIT_ORDER[audit_rank],

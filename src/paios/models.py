@@ -8,6 +8,7 @@ that the code and the documentation stay in step.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -94,6 +95,42 @@ class RiskDomain(str, Enum):
     FINANCIAL = "financial"
     OPERATIONAL = "operational"
     GOVERNANCE = "governance"
+
+
+class PolicyOutcome(str, Enum):
+    """A policy's verdict on a request.
+
+    Ordered by precedence: a DENY from any applicable policy wins outright, and
+    approval can never override it. Risk level is NOT part of this ordering —
+    see the design rule in policy.py: risk never authorizes execution.
+    """
+
+    ALLOW = "allow"
+    ALLOW_WITH_CONTROLS = "allow_with_controls"
+    REQUIRE_APPROVAL = "require_approval"
+    DENY = "deny"
+
+    @property
+    def precedence(self) -> int:
+        return _OUTCOME_PRECEDENCE.index(self)
+
+    @classmethod
+    def strongest(cls, outcomes: Iterable[PolicyOutcome]) -> PolicyOutcome:
+        """The winning outcome across every applicable policy."""
+        best = cls.ALLOW
+        for outcome in outcomes:
+            if outcome.precedence > best.precedence:
+                best = outcome
+        return best
+
+
+# Ascending precedence. DENY last means DENY wins.
+_OUTCOME_PRECEDENCE = [
+    PolicyOutcome.ALLOW,
+    PolicyOutcome.ALLOW_WITH_CONTROLS,
+    PolicyOutcome.REQUIRE_APPROVAL,
+    PolicyOutcome.DENY,
+]
 
 
 class Disposition(str, Enum):
@@ -190,15 +227,34 @@ class PolicyViolation:
 class PolicyDecision:
     """The merged effects of every policy that matched a request."""
 
+    decision: PolicyOutcome = PolicyOutcome.ALLOW
     matched: tuple[str, ...] = ()
-    require_approval: bool = False
+    reason_codes: tuple[str, ...] = ()
     allowed_tools: frozenset[str] | None = None
     denied_tools: frozenset[str] = frozenset()
     audit_level: str = "standard"
 
+    @property
+    def denied(self) -> bool:
+        return self.decision is PolicyOutcome.DENY
+
+    @property
+    def require_approval(self) -> bool:
+        return self.decision is PolicyOutcome.REQUIRE_APPROVAL
+
     def permits_tool(self, tool: str) -> bool:
-        """Deny always wins; an absent allow-list means no allow constraint."""
+        """Whether policy permits this tool.
+
+        NOTE: this is a policy *decision*, not a security boundary. Nothing is
+        enforced by calling it. Enforcement is the Execution Gateway's job, and
+        the gateway re-validates independently rather than trusting a caller to
+        have consulted this first. See execution.ExecutionGateway.
+        """
+        if self.denied:
+            return False
         if tool in self.denied_tools:
+            return False
+        if "*" in self.denied_tools:
             return False
         if self.allowed_tools is None:
             return True
@@ -206,7 +262,9 @@ class PolicyDecision:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "decision": self.decision.value,
             "matched_policies": list(self.matched),
+            "reason_codes": list(self.reason_codes),
             "require_approval": self.require_approval,
             "allowed_tools": (
                 sorted(self.allowed_tools) if self.allowed_tools is not None else None

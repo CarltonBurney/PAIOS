@@ -1,17 +1,23 @@
 """Routing and authorization.
 
-Two distinct things happen here, and the order matters:
+**Authorization** answers *is this identity entitled to attempt this class of
+operation?* It runs before classification and is identity-only.
 
-1. **Authorization** — is this caller allowed to make this request at all?
-   Failures here block outright. Authorization is identity-based and is
-   deliberately *not* expressed in the policy engine: policy decides what a
-   permitted request may do, authorization decides whether it is permitted.
+**Policy** answers *may this specific, otherwise-authorized request proceed
+under current governance conditions?* It runs after risk assessment and can
+return DENY.
 
-2. **Disposition** — given the risk level and the merged policy decision, does
-   this execute, wait for a human, or escalate?
+Both layers are required and neither subsumes the other. An authenticated,
+properly authorized administrator can still submit a request that policy must
+refuse — a prohibited L4 operation, an export violating a data-handling rule,
+an operation forbidden in production.
 
-The level-to-disposition mapping lives in policies/risk-model.json, so the
-routing table is configuration rather than a table in this file.
+**Disposition** is the routing verdict: execute, wait for a human, escalate, or
+block. The level-to-disposition mapping lives in policies/risk-model.json, so
+the routing table is configuration rather than a table in this file.
+
+A disposition is not permission to execute. It selects a path; the Execution
+Gateway independently decides whether any given tool call may proceed.
 """
 
 from __future__ import annotations
@@ -38,19 +44,25 @@ DEFAULT_AGENTS: dict[RequestType, Agent] = {
     RequestType.GOVERNANCE_CHANGE: Agent.CORE,
 }
 
-GOVERNANCE_ROLES = frozenset({"governance_admin", "admin"})
-
 
 def candidate_agent(classification: Classification) -> Agent:
     """The agent a request would run on, resolved before policy evaluation."""
     return DEFAULT_AGENTS[classification.request_type]
 
 
-def authorize(
-    request: Request,
-    classification: Classification,
-) -> tuple[PolicyViolation, ...]:
-    """Identity-based checks. Any failure blocks the request."""
+def authorize(request: Request) -> tuple[PolicyViolation, ...]:
+    """Identity-level entitlement. Runs BEFORE classification.
+
+    Answers only: *is this identity entitled to attempt this class of
+    operation?* It knows nothing about what the request turns out to be, which
+    is why it runs first and stays cheap.
+
+    Context-dependent refusal — "this otherwise-authorized request may not
+    proceed under current governance conditions" — is the policy engine's job
+    and produces PolicyOutcome.DENY. The two layers answer different questions
+    and both are required: an authorized administrator can still submit a
+    request that policy must refuse.
+    """
     failures: list[PolicyViolation] = []
     identity = request.identity
 
@@ -62,19 +74,6 @@ def authorize(
                 detail="unauthenticated identity",
             )
         )
-
-    if classification.request_type is RequestType.GOVERNANCE_CHANGE:
-        if not (identity.roles & GOVERNANCE_ROLES):
-            failures.append(
-                PolicyViolation(
-                    policy_id="AUTHZ-002",
-                    control="Governance changes require a governance role",
-                    detail=(
-                        f"identity '{identity.subject}' lacks a governance role "
-                        "required to request a governance change"
-                    ),
-                )
-            )
 
     return tuple(failures)
 
@@ -103,6 +102,16 @@ class Router:
                 disposition=Disposition.BLOCKED,
                 agent=None,
                 reason=f"authorization failed: {detail}",
+            )
+
+        # A policy deny is final and outranks everything below it. Approval
+        # cannot override it and neither can a low risk level.
+        if policy is not None and policy.denied:
+            codes = ", ".join(policy.reason_codes) or "policy denied"
+            return RoutingDecision(
+                disposition=Disposition.BLOCKED,
+                agent=None,
+                reason=f"policy denied: {codes}",
             )
 
         configured = self.risk_model.disposition_for(risk.level)

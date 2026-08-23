@@ -13,6 +13,14 @@ from .audit import AuditEvent, AuditSink, AuditStage, InMemoryAuditSink, JsonlAu
 from .classification import ModelAssistedClassifier, RuleClassifier
 from .config import ConfigError, Settings
 from .control_plane import ControlPlane
+from .execution import (
+    ExecutionGateway,
+    ExecutionRejected,
+    ExecutionResult,
+    Principal,
+    RejectionReason,
+    StaticHandlerResolver,
+)
 from .models import (
     Agent,
     Approval,
@@ -23,6 +31,7 @@ from .models import (
     Identity,
     Outcome,
     PolicyDecision,
+    PolicyOutcome,
     PolicyViolation,
     Request,
     RequestType,
@@ -31,9 +40,23 @@ from .models import (
     RiskLevel,
     RoutingDecision,
 )
-from .policy import Policy, PolicyEffects, PolicyEngine, PolicyScope, PolicySet
+from .policy import (
+    Policy,
+    PolicyConditions,
+    PolicyEffects,
+    PolicyEngine,
+    PolicyScope,
+    PolicySet,
+)
 from .risk import RiskEngine, RiskModel
 from .routing import Router, authorize, candidate_agent
+from .tools import (
+    CallerType,
+    OperationType,
+    ToolConstraints,
+    ToolDefinition,
+    ToolRegistry,
+)
 
 __version__ = "0.1.0"
 
@@ -45,24 +68,33 @@ __all__ = [
     "AuditSink",
     "AuditStage",
     "authorize",
+    "CallerType",
     "candidate_agent",
     "Classification",
     "ConfigError",
     "ControlPlane",
     "Disposition",
     "Execution",
+    "ExecutionGateway",
+    "ExecutionRejected",
+    "ExecutionResult",
     "Identity",
     "InMemoryAuditSink",
     "JsonlAuditSink",
     "ModelAssistedClassifier",
+    "OperationType",
     "Outcome",
     "Policy",
+    "PolicyConditions",
     "PolicyDecision",
     "PolicyEffects",
     "PolicyEngine",
+    "PolicyOutcome",
     "PolicyScope",
     "PolicySet",
     "PolicyViolation",
+    "Principal",
+    "RejectionReason",
     "Request",
     "RequestType",
     "RiskAssessment",
@@ -74,5 +106,9 @@ __all__ = [
     "RoutingDecision",
     "RuleClassifier",
     "Settings",
+    "StaticHandlerResolver",
+    "ToolConstraints",
+    "ToolDefinition",
+    "ToolRegistry",
     "__version__",
 ]
