@@ -1,0 +1,66 @@
+name: Validate Tier-1 Remediation
+
+on:
+  push:
+    paths:
+      - 'tier1-remediation/**'
+      - '.github/workflows/validate-tier1-remediation.yml'
+  pull_request:
+    paths:
+      - 'tier1-remediation/**'
+      - '.github/workflows/validate-tier1-remediation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Workflow definition and diagram
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate Logic Apps workflow definition
+        run: python3 tier1-remediation/scripts/validate_workflow.py
+
+      - name: Check architecture diagram is present and well-formed
+        run: |
+          DIAGRAM=tier1-remediation/diagrams/architecture.mmd
+          test -s "$DIAGRAM" || { echo "::error::$DIAGRAM is missing or empty"; exit 1; }
+          grep -qE '^\s*(flowchart|graph)\s' "$DIAGRAM" \
+            || { echo "::error::$DIAGRAM has no flowchart/graph declaration"; exit 1; }
+          # Mermaid subgraphs must be balanced or the diagram fails to render.
+          OPEN=$(grep -cE '^\s*subgraph\b' "$DIAGRAM")
+          CLOSE=$(grep -cE '^\s*end\s*$' "$DIAGRAM")
+          if [ "$OPEN" -ne "$CLOSE" ]; then
+            echo "::error::unbalanced mermaid blocks — $OPEN subgraph vs $CLOSE end"
+            exit 1
+          fi
+          echo "Diagram OK — $OPEN balanced subgraphs."
+
+      - name: Check documentation links resolve
+        run: |
+          # Relative links in the framework README must point at files that exist.
+          # A broken link on the page a recruiter lands on is worth failing over.
+          README=tier1-remediation/README.md
+          STATUS=0
+          while IFS= read -r TARGET; do
+            case "$TARGET" in
+              http*|\#*) continue ;;
+            esac
+            RESOLVED="$(dirname "$README")/${TARGET%%#*}"
+            if [ ! -e "$RESOLVED" ]; then
+              echo "::error file=$README::broken relative link -> $TARGET"
+              STATUS=1
+            fi
+          done < <(grep -oE '\]\([^)]+\)' "$README" | sed -E 's/^\]\(//; s/\)$//')
+          [ "$STATUS" -eq 0 ] && echo "All relative links in $README resolve."
+          exit "$STATUS"
