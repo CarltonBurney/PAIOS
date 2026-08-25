@@ -300,9 +300,29 @@ tier1-remediation/
 ├── README.md                          # This document
 ├── diagrams/
 │   └── architecture.mmd               # Mermaid source — full system architecture
+├── scripts/
+│   └── validate_workflow.py           # Structural validation for the workflow definition
 └── workflows/
     └── tier1-remediation.json         # Logic Apps / Power Automate workflow definition
 ```
+
+## Validation
+
+The workflow definition is checked in CI on every push and pull request that touches this directory (`.github/workflows/validate-tier1-remediation.yml`). Run the same checks locally:
+
+```bash
+python3 tier1-remediation/scripts/validate_workflow.py
+```
+
+Fourteen checks run, covering three categories:
+
+**Structural integrity** — the definition parses, declares the Logic Apps schema, has exactly one HTTP request trigger, action names are unique across the whole tree, every `runAfter` target resolves to a real sibling, and every `body()` / `outputs()` reference names an action that exists. Logic Apps resolves actions by bare name, so a duplicate silently makes those references ambiguous; that class of bug is invisible on inspection and fatal at runtime.
+
+**Declaration hygiene** — every variable referenced through `variables()` is initialized, and every parameter referenced through `parameters()` is declared.
+
+**Secret and tenant-data leakage** — no GUID outside the known placeholder set appears in the file, no Azure Automation webhook URI is committed, `printerRunbookWebhookUri` remains a `SecureString` with an empty default, and the password reset action still marks its inputs and outputs as `secureData`.
+
+That last group is the one with ongoing value. The structural checks mostly confirm what review would catch; the leakage checks catch the mistake that happens months later, when someone pastes a live subscription ID or a working webhook URI into the sample while debugging and commits it without noticing.
 
 ---
 
