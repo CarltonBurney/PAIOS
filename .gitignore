@@ -112,6 +112,9 @@ PSScriptAnalyzerResults.xml
 !.vscode/extensions.json
 !.vscode/settings.sample.json
 .idea/
+
+# Claude Code per-machine settings — local permissions, never shared
+.claude/settings.local.json
 *.swp
 *~
 .DS_Store
