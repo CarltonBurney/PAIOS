@@ -86,13 +86,14 @@ function Invoke-WithTimeout {
             # Kill($true) kills the process tree but only exists on PowerShell 7+;
             # Windows PowerShell 5.1 falls back to killing the process itself.
             try { $process.Kill($true) } catch { try { $process.Kill() } catch { } }
-            return [pscustomobject]@{ TimedOut = $true; ExitCode = $null; Output = '' }
+            return [pscustomobject]@{ TimedOut = $true; ExitCode = $null; Output = ''; Error = '' }
         }
 
         return [pscustomobject]@{
             TimedOut = $false
             ExitCode = $process.ExitCode
             Output   = ([string](Get-Content -LiteralPath $stdout -Raw -ErrorAction SilentlyContinue))
+            Error    = ([string](Get-Content -LiteralPath $stderr -Raw -ErrorAction SilentlyContinue))
         }
     }
     finally {
@@ -109,6 +110,7 @@ function Wait-DockerEngine {
     $deadline = (Get-Date).AddSeconds($Seconds)
     $probeSeconds = 15
     $attempt = 0
+    $lastError = ''
 
     while ((Get-Date) -lt $deadline) {
         $attempt++
@@ -123,6 +125,16 @@ function Wait-DockerEngine {
 
         $state = if ($result.TimedOut) { 'no response' } else { "exit code $($result.ExitCode)" }
         Write-Host "Waiting for the Docker engine... (attempt $attempt, $state)" -ForegroundColor Yellow
+
+        # Surface what the engine actually said, once per distinct message. A
+        # 500 on /_ping, for example, means the backend is reachable but
+        # unhealthy, which needs different recovery than a silent timeout.
+        $engineError = ($result.Error -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+        if ($engineError -and $engineError -ne $lastError) {
+            Write-Host "  engine says: $($engineError.Trim())" -ForegroundColor DarkYellow
+            $lastError = $engineError
+        }
+
         Start-Sleep -Seconds 5
     }
 

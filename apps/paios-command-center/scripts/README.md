@@ -10,7 +10,12 @@ cd apps\paios-command-center
 .\scripts\start.ps1 -Mode Dotnet # skip Docker entirely
 ```
 
-Both runtimes serve <http://localhost:8080>.
+Both runtimes serve <http://localhost:8080>. To open it, use `Start-Process`
+— a bare URL is not a PowerShell command:
+
+```powershell
+Start-Process http://localhost:8080/
+```
 
 ## Why the script exists
 
@@ -24,6 +29,28 @@ Two Docker Desktop behaviours break a plain `docker compose up --build`:
   a half-started engine block indefinitely instead of failing. Every engine
   probe here runs under a hard timeout and is retried until `-TimeoutSeconds`
   (default 90) elapses.
+
+## `500 Internal Server Error ... /_ping`
+
+```text
+request returned 500 Internal Server Error for API route and version
+http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/_ping
+```
+
+This is a different failure from a silent hang, and it is progress: the
+`dockerDesktopLinuxEngine` named pipe exists and is answering, so Docker
+Desktop itself is up. The 500 means the Linux backend behind that pipe is not
+healthy — usually a WSL 2 distro that failed to start or is mid-shutdown.
+
+```powershell
+wsl -l -v          # docker-desktop should be Running, version 2
+wsl --shutdown     # then fully quit and reopen Docker Desktop
+wsl --update
+```
+
+Quit Docker Desktop from the tray (not just close the window) before
+restarting it, so the backend re-attaches to the restarted WSL distro. If the
+500 persists after that, work through the general steps below.
 
 ## If the engine never becomes healthy
 
