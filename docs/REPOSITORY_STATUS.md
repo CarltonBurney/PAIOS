@@ -6,7 +6,7 @@ of this repository — it intentionally records no account, credential, or
 personal data.
 
 **Snapshot date:** 2026-09-03
-**Default branch:** `main` (`d078b60`)
+**Default branch:** `main` (`07457fc`)
 
 ---
 
@@ -18,10 +18,12 @@ personal data.
 | Architecture references | Merged | `architecture/` — system architecture and governance workflow Mermaid diagrams, request classification flow |
 | Sample policies | Merged | `policies/sample-governance-policies.json` |
 | Tier-1 remediation reference implementation | Merged (PR #1) | `tier1-remediation/` — workflow definition, architecture diagram, validation script |
+| PAIOS Command Center | Merged | `apps/paios-command-center/` — .NET 8 ASP.NET Core scaffold; static shell, `/health`, `/api/workspaces` |
 | CI | Partial | `.github/workflows/validate-tier1-remediation.yml` validates the Tier-1 workflow only |
 
-`main` currently contains documentation, one reference workflow, and its
-validation job. It contains no application source code.
+`main` currently contains documentation, one reference workflow and its
+validation job, and the Command Center scaffold. The governance control plane
+itself is not on `main` — it is still in PR #2.
 
 ---
 
@@ -64,7 +66,20 @@ These are stated so they are not mistaken for oversights.
   the control plane merges, or the suite becomes unverified on `main`.
 - **No persistence layer.** Registries and audit records are in memory. Postgres
   exists in the dev compose stack but holds n8n data only.
-- **No HTTP surface.** PAIOS is a library; there is no service entry point.
+- **Two runtimes, unreconciled.** The Command Center on `main` is .NET 8 /
+  ASP.NET Core. The control plane in PR #2 is Python. Nothing currently
+  defines how the shell reaches the governance layer — whether the control
+  plane grows an HTTP surface the shell calls, or the enforcement boundary is
+  reimplemented in .NET. This decision should be made deliberately rather than
+  settled by whichever side ships first.
+- **The Command Center shell is not governed.** `/api/workspaces` returns a
+  hardcoded list, three of four entries marked `simulation`. No request passes
+  through classification, policy, or audit. It is a shell awaiting a backend,
+  not an enforcement path.
+- **Port binding is inconsistent across compose files.** The Command Center
+  compose publishes `"8080:8080"`, which binds all interfaces. PR #2's compose
+  deliberately binds every published port to `127.0.0.1`. Worth aligning on
+  the stricter form before either stack is run outside a laptop.
 - **Agent, Model, and Workflow registries are unbuilt.** Only the Tool registry
   sits on the governed registry substrate.
 - **Break-glass is specified, not implemented.** `L4` denial stands on the
@@ -84,4 +99,6 @@ These are stated so they are not mistaken for oversights.
 1. Resolve the `.gitignore` conflict on PR #2 and get it mergeable.
 2. Add a Python CI workflow (ruff + pytest) so PR #2's suite is enforced.
 3. Merge PR #2.
-4. Pick up persistence or the remaining registries as separate slices.
+4. Decide how the Command Center shell and the control plane connect, before
+   either grows further in its own direction.
+5. Pick up persistence or the remaining registries as separate slices.
