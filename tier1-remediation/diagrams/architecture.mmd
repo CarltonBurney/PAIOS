@@ -1,0 +1,113 @@
+%% Tier-1 IT Support Remediation — Reference Architecture
+%% Render: https://mermaid.live  |  VS Code: Markdown Preview Mermaid Support
+%% Scope: Teams Mobile intake -> conditional routing -> automated remediation -> Dataverse logging
+
+flowchart TD
+
+    %% ---------- Intake Layer ----------
+    subgraph INTAKE["1 · Intake Layer"]
+        direction TB
+        A([End User<br/>Teams Mobile Client]) --> B[Power Virtual Agent<br/>Support Bot]
+        B --> C[Adaptive Card<br/>Structured Request Capture]
+        C --> D{{"HTTP Request Trigger<br/>POST /tier1-remediation"}}
+    end
+
+    %% ---------- Identity & Authorization ----------
+    subgraph IDENTITY["2 · Identity &amp; Authorization"]
+        direction TB
+        D --> E[Resolve Caller<br/>Microsoft Graph]
+        E --> F{Entra ID<br/>Identity Verified?}
+        F -->|Unverified| BLOCK[Reject Request<br/>HTTP 401]
+        F -->|Verified| G{Eligible for<br/>Self-Service?}
+        G -->|Ineligible| ESC1[Escalate to Tier 2]
+    end
+
+    %% ---------- Routing ----------
+    subgraph ROUTING["3 · Conditional Routing"]
+        direction TB
+        G -->|Eligible| H{{"Switch on<br/>requestType"}}
+        H -->|password_reset| PR0[Password Reset Branch]
+        H -->|printer_diagnostics| PD0[Printer Diagnostics Branch]
+        H -->|default| ESC2[Unsupported Scenario<br/>Escalate to Tier 2]
+    end
+
+    %% ---------- Password Reset Remediation ----------
+    subgraph PWRESET["4a · Password Reset Remediation"]
+        direction TB
+        PR0 --> PR1{MFA Challenge<br/>Satisfied?}
+        PR1 -->|No| PR_FAIL[Deny — Step-Up<br/>Authentication Required]
+        PR1 -->|Yes| PR2[Graph API<br/>authentication/passwordMethods/resetPassword]
+        PR2 --> PR3[Poll Long-Running<br/>Operation Location]
+        PR3 --> PR4{Reset<br/>Succeeded?}
+        PR4 -->|Yes| PR5[Deliver Temp Credential<br/>Out-of-Band]
+        PR4 -->|No| PR_FAIL
+        PR5 --> PR6[Force Change<br/>at Next Sign-In]
+    end
+
+    %% ---------- Printer Diagnostics Remediation ----------
+    subgraph PRINTER["4b · Printer Diagnostics Remediation"]
+        direction TB
+        PD0 --> PD1[Query Print Queue State<br/>Universal Print / Print Server]
+        PD1 --> PD2{Fault<br/>Classification}
+        PD2 -->|Spooler Hung| PD3[Runbook: Restart<br/>Print Spooler Service]
+        PD2 -->|Queue Backlog| PD4[Runbook: Purge<br/>Stalled Print Jobs]
+        PD2 -->|Driver Mismatch| PD5[Intune: Redeploy<br/>Printer Driver Package]
+        PD2 -->|Offline / Hardware| PD_FAIL[Hardware Fault —<br/>Not Auto-Remediable]
+        PD3 --> PD6[Re-Test Print Path]
+        PD4 --> PD6
+        PD5 --> PD6
+        PD6 --> PD7{Verification<br/>Passed?}
+        PD7 -->|No| PD_FAIL
+    end
+
+    %% ---------- Exception Handling ----------
+    subgraph EXCEPTION["5 · Event-Driven Failure Handling"]
+        direction TB
+        PR_FAIL --> X1[Catch Scope<br/>runAfter: Failed / TimedOut]
+        PD_FAIL --> X1
+        ESC1 --> X1
+        ESC2 --> X1
+        X1 --> X2[Classify Exception<br/>Transient vs. Terminal]
+        X2 -->|Transient| X3[Retry with<br/>Exponential Backoff]
+        X3 --> H
+        X2 -->|Terminal| X4[Create Ticket<br/>Tier 2 Queue]
+        X4 --> X5[Post Adaptive Card<br/>Support Channel]
+    end
+
+    %% ---------- Logging & Telemetry ----------
+    subgraph LOGGING["6 · Centralized Logging &amp; Telemetry"]
+        direction TB
+        LOG[(Dataverse<br/>Remediation Log Table)]
+        LOG --> BI[Power BI<br/>Operational Dashboard]
+        LOG --> AI[Application Insights<br/>Run History &amp; Traces]
+    end
+
+    %% ---------- Terminal Outcomes ----------
+    PR6 --> OK([Remediation Successful<br/>Confirmation to User])
+    PD7 -->|Yes| OK
+    X5 --> ESCOUT([Escalated —<br/>User Notified])
+
+    %% ---------- Logging Edges ----------
+    OK -.->|write outcome| LOG
+    ESCOUT -.->|write exception| LOG
+    BLOCK -.->|write denial| LOG
+    PR2 -.->|write audit event| LOG
+    PD2 -.->|write diagnostic| LOG
+    X2 -.->|write exception| LOG
+
+    %% ---------- Styling ----------
+    style A fill:#00aa44,color:#fff
+    style OK fill:#00aa44,color:#fff
+    style ESCOUT fill:#ff8800,color:#fff
+    style BLOCK fill:#cc0000,color:#fff
+    style PR_FAIL fill:#ff4444,color:#fff
+    style PD_FAIL fill:#ff4444,color:#fff
+    style ESC1 fill:#ff8800,color:#fff
+    style ESC2 fill:#ff8800,color:#fff
+    style X1 fill:#ff4444,color:#fff
+    style X4 fill:#ff8800,color:#fff
+    style LOG fill:#0066cc,color:#fff
+    style BI fill:#0066cc,color:#fff
+    style AI fill:#0066cc,color:#fff
+    style H fill:#6633cc,color:#fff
+    style D fill:#6633cc,color:#fff

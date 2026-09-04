@@ -28,6 +28,9 @@ Architecture references, diagrams, workflows, and system design documentation.
 **policies/**
 Sample governance policies and control definitions.
 
+**tier1-remediation/**
+Reference implementation of a Tier-1 IT support remediation framework built on Microsoft 365 and the Power Platform. Demonstrates the governance model applied to live workloads: Teams Mobile intake, conditional routing, automated password reset and printer diagnostics, and centralized Dataverse audit logging. See [tier1-remediation/README.md](tier1-remediation/README.md).
+
 **src/**
 Reference implementation materials and supporting assets.
 

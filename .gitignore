@@ -1,11 +1,131 @@
+# ---------------------------------------------------------------------------
+# Secrets and local configuration — never commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+local.settings.json
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+*.publishsettings
+*.pubxml
+*.pubxml.user
+*.pfx
+*.p12
+*.key
+*.pem
+*.cer
+connections.local.json
+parameters.local.json
+*.parameters.local.json
+
+# ---------------------------------------------------------------------------
+# Azure / Azure CLI / Bicep / Terraform
+# ---------------------------------------------------------------------------
+.azure/
+azure.err
+*.azurePubxml
+.bicep/
+*.bicepparam.local
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+crash.log
+.terraformrc
+terraform.rc
+
+# ---------------------------------------------------------------------------
+# Power Platform / Power Automate / Dataverse
+# ---------------------------------------------------------------------------
+# Unpacked and packed solution build output
+/out/
+/bin/
+/obj/
+*.msapp
+*_managed.zip
+*_unmanaged.zip
+Solution/bin/
+Solution/obj/
+
+# Power Platform CLI (pac) artifacts and auth profiles
+.pac/
+PowerAppsTools_*/
+*.pa.yaml.bak
+
+# Exported flow definitions containing environment-specific connection IDs
+**/connections.json
+**/*.connections.json
+
+# ---------------------------------------------------------------------------
+# .NET / Visual Studio
+# ---------------------------------------------------------------------------
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild[Ll]og.*
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.dbmdl
+*.VisualState.xml
+TestResult.xml
+[Tt]est[Rr]esult*/
+project.lock.json
+artifacts/
+
+# ---------------------------------------------------------------------------
+# Node / npm (Logic Apps Standard, custom connectors, tooling)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+
+# ---------------------------------------------------------------------------
+# Python (automation scripts, runbooks)
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
+.venv/
+venv/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
 *.egg-info/
 build/
-dist/
-.venv/
-venv/
-.env
+
+# ---------------------------------------------------------------------------
+# PowerShell (remediation runbooks)
+# ---------------------------------------------------------------------------
+*.ps1.bak
+PSScriptAnalyzerResults.xml
+
+# ---------------------------------------------------------------------------
+# Editors and OS
+# ---------------------------------------------------------------------------
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.sample.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Logs and temporary output
+# ---------------------------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+*.tmp
 *.jsonl

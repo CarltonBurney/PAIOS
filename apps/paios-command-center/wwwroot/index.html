@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PAIOS Command Center</title>
+  <style>
+    :root { --ink:#27322f; --paper:#f8e9eb; --mauve:#9b7b88; --sky:#b9dce6; --olive:#718053; }
+    * { box-sizing:border-box; } body { margin:0; min-height:100vh; display:grid; grid-template-columns:260px 1fr; background:linear-gradient(135deg,var(--paper),#f2d6d2 55%,var(--sky)); color:var(--ink); font:14px system-ui,sans-serif; }
+    aside { padding:28px 20px; background:#27322fee; color:var(--paper); } .brand { font-size:24px; font-weight:700; letter-spacing:.12em; } .brand span { color:#e9b8b2; }
+    .eyebrow { margin:50px 0 14px; color:#e9b8b2; font:10px monospace; text-transform:uppercase; letter-spacing:.12em; } nav { display:grid; gap:8px; } nav button { border:0; padding:14px; text-align:left; color:#d9e0d7; background:transparent; cursor:pointer; } nav button.active,nav button:hover { background:var(--olive); color:white; }
+    main { padding:clamp(28px,5vw,80px); } header { display:flex; justify-content:space-between; align-items:end; gap:20px; border-bottom:1px solid #27322f33; padding-bottom:25px; } h1 { margin:0; font-size:clamp(38px,6vw,84px); line-height:.9; letter-spacing:-.07em; font-weight:500; } h1 em { color:var(--mauve); font-style:normal; } .status { font:11px monospace; text-transform:uppercase; } .status i { display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:var(--olive); }
+    .workspace { display:none; padding-top:34px; } .workspace.active { display:block; } .workspace p { max-width:540px; color:#6e7771; line-height:1.6; } .panel-grid { display:grid; grid-template-columns:repeat(3,minmax(160px,1fr)); gap:14px; margin-top:32px; } .panel { min-height:150px; padding:20px; background:#f8e9ebaa; border:1px solid #27322f22; } .panel b { display:block; margin-bottom:35px; font-size:22px; font-weight:500; } .panel small { color:#6e7771; font-family:monospace; text-transform:uppercase; }
+    .notice { margin-top:34px; padding:18px 20px; background:var(--sky); font-family:monospace; font-size:11px; line-height:1.6; }
+    @media(max-width:700px){body{display:block}aside{min-height:auto;padding:18px;display:flex;align-items:center;justify-content:space-between} .eyebrow{display:none} nav{display:flex;gap:4px}nav button{padding:8px;font-size:11px}main{padding:32px 20px}.panel-grid{grid-template-columns:1fr 1fr}.status{font-size:9px}}
+  </style>
+</head>
+<body>
+  <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
+  <main><header><h1 id="page-title">One place<br><em>to think.</em></h1><div class="status"><i></i>Local container / ready</div></header>
+    <section class="workspace active" id="workspace-dashboard"><p>A focused shell for your local models, operational tools, and browser surfaces. Use the rail to move between workspaces without multiplying windows.</p><div class="panel-grid"><div class="panel"><b>04</b><small>workspaces</small></div><div class="panel"><b>01</b><small>container</small></div><div class="panel"><b>∞</b><small>local sessions</small></div></div><div class="notice">BACKEND: /api/workspaces · HEALTH: /health · MODE: LOCAL FIRST</div></section>
+    <section class="workspace" id="workspace-llm"><p>Connect local LLM surfaces here through model-specific adapters or OpenAI-compatible endpoints. Keep credentials in environment variables.</p><div class="panel-grid"><div class="panel"><b>01</b><small>chat workspace</small></div><div class="panel"><b>02</b><small>context vault</small></div></div></section>
+    <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="panel-grid"><div class="panel"><b>GMP</b><small>suite</small></div><div class="panel"><b>IT</b><small>helpdesk</small></div><div class="panel"><b>SSL</b><small>monitor</small></div></div></section>
+    <section class="workspace" id="workspace-ops"><p>Operational dashboards and browser tools can live here as embedded surfaces or routes to separate local services.</p><div class="notice">NEXT WIRING POINT: add iframe or authenticated API adapter for each local application.</div></section>
+  </main>
+  <script>
+    const titles = { dashboard:'One place<br><em>to think.</em>', llm:'Local models<br><em>at hand.</em>', agents:'Agents<br><em>in concert.</em>', ops:'Work<br><em>in motion.</em>' };
+    document.querySelectorAll('[data-workspace]').forEach((button) => button.addEventListener('click', () => { const key=button.dataset.workspace; document.querySelectorAll('[data-workspace]').forEach((item)=>item.classList.toggle('active',item===button)); document.querySelectorAll('.workspace').forEach((item)=>item.classList.toggle('active',item.id===`workspace-${key}`)); document.querySelector('#page-title').innerHTML=titles[key]; }));
+  </script>
+</body>
+</html>
