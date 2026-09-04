@@ -19,7 +19,7 @@ personal data.
 | Sample policies | Merged | `policies/sample-governance-policies.json` |
 | Tier-1 remediation reference implementation | Merged (PR #1) | `tier1-remediation/` — workflow definition, architecture diagram, validation script |
 | PAIOS Command Center | Merged | `apps/paios-command-center/` — .NET 8 ASP.NET Core scaffold; static shell, `/health`, `/api/workspaces` |
-| CI | Partial | `.github/workflows/validate-tier1-remediation.yml` validates the Tier-1 workflow only |
+| CI | Partial | `.github/workflows/validate-tier1-remediation.yml` validates the Tier-1 workflow only. Control-plane CI exists on PR #2's branch but is not yet on `main`. |
 
 `main` currently contains documentation, one reference workflow and its
 validation job, and the Command Center scaffold. The governance control plane
@@ -33,32 +33,23 @@ itself is not on `main` — it is still in PR #2.
 
 Branch `claude/control-plane-implementation`. Adds the request lifecycle,
 two-axis risk model, declarative policy engine, governed registry framework,
-tool registry, and execution gateway: 38 files, ~8,100 added lines, 144 tests.
+tool registry, and execution gateway: 40 files, ~8,170 added lines, 144 tests.
 
-**Status: blocked on a merge conflict.** The branch was cut from `a4cd573`;
-`main` has since advanced to `d078b60` via the Tier-1 merge.
+**Status: clean, no conflicts, ready for review.** The earlier `.gitignore`
+add/add conflict was resolved by merging `main` into the branch (`5f34d6f`); the
+branch now contains `main` at `07457fc`. Its `.gitignore` carries `main`'s
+content plus `*.egg-info/`, `build/` and `*.jsonl`.
 
-**Conflict scope: one file.** `.gitignore`, an add/add conflict. No source file,
-policy file, or document conflicts.
+The branch also adds `.github/workflows/validate-control-plane.yml` (`4980c53`),
+which runs on changes to `src/`, `tests/`, `policies/` or `pyproject.toml`:
+ruff over the repository, the full pytest suite on Python 3.12, and a parse
+check over every file in `policies/`. That last gate exists because the policy
+engine, risk model and tool registry are configuration rather than code — a
+malformed JSON file there disables governance at load time rather than failing
+review.
 
-Resolution: take the `main` version as the base — it already covers
-`__pycache__/`, `*.py[cod]`, `.venv/`, `venv/`, `.pytest_cache/`, `.ruff_cache/`
-and `dist/` — and append the three entries it does not carry:
-
-```
-*.egg-info/
-build/
-*.jsonl
-```
-
-Merging `main` into the branch and resolving that single file restores
-mergeability. No history rewrite is required.
-
-Note the ordering interaction with PR #4, which also edits `.gitignore`
-(unanchoring `bin/` and `obj/`). Whichever of the two merges second re-resolves
-against the other's version. The resolution shape is unchanged — take the base
-version and append the entries it lacks — but resolve PR #2 against `main` as it
-stands at merge time, not against the snapshot above.
+Note the PR's own description still carries a "No CI" caveat written before that
+workflow was added. The workflow is on the branch; the description is stale.
 
 ### PR #4 — Docker-optional launcher and session toolchain
 
@@ -82,10 +73,6 @@ No application code changes; both runtimes serve the same `/`, `/health` and
 
 These are stated so they are not mistaken for oversights.
 
-- **No CI for the control plane.** The only workflow validates the Tier-1
-  remediation JSON. PR #2's 144 tests and lint run locally but no check
-  executes them on a pull request. A Python test/lint workflow is needed before
-  the control plane merges, or the suite becomes unverified on `main`.
 - **No persistence layer.** Registries and audit records are in memory. Postgres
   exists in the dev compose stack but holds n8n data only.
 - **Two runtimes, unreconciled.** The Command Center on `main` is .NET 8 /
@@ -122,10 +109,10 @@ These are stated so they are not mistaken for oversights.
 
 ## Suggested order of work
 
-1. Resolve the `.gitignore` conflict on PR #2 and get it mergeable.
-2. Add a Python CI workflow (ruff + pytest) so PR #2's suite is enforced.
-3. Merge PR #2 and PR #4, resolving `.gitignore` in whichever lands second.
-4. Verify the Docker-healthy path once a working daemon is available.
-5. Decide how the Command Center shell and the control plane connect, before
+1. Review and merge PR #2. It is clean and carries its own CI; merging it is
+   what puts the control plane and its enforcement on `main`.
+2. Review and merge PR #4. Both merge orders were verified conflict-free.
+3. Verify the Docker-healthy path once a working daemon is available.
+4. Decide how the Command Center shell and the control plane connect, before
    either grows further in its own direction.
-6. Pick up persistence or the remaining registries as separate slices.
+5. Pick up persistence or the remaining registries as separate slices.
