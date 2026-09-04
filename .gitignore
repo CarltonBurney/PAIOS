@@ -62,6 +62,9 @@ PowerAppsTools_*/
 # ---------------------------------------------------------------------------
 # .NET / Visual Studio
 # ---------------------------------------------------------------------------
+# Build output anywhere in the tree, not just at the repository root
+bin/
+obj/
 [Dd]ebug/
 [Rr]elease/
 x64/
