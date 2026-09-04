@@ -5,7 +5,7 @@ is merged, what is in flight, and what is blocked. It is scoped to the contents
 of this repository — it intentionally records no account, credential, or
 personal data.
 
-**Snapshot date:** 2026-09-03
+**Snapshot date:** 2026-09-04
 **Default branch:** `main` (`07457fc`)
 
 ---
@@ -54,6 +54,28 @@ build/
 Merging `main` into the branch and resolving that single file restores
 mergeability. No history rewrite is required.
 
+Note the ordering interaction with PR #4, which also edits `.gitignore`
+(unanchoring `bin/` and `obj/`). Whichever of the two merges second re-resolves
+against the other's version. The resolution shape is unchanged — take the base
+version and append the entries it lacks — but resolve PR #2 against `main` as it
+stands at merge time, not against the snapshot above.
+
+### PR #4 — Docker-optional launcher and session toolchain
+
+Branch `claude/docker-desktop-init-blocked-k7zwoa`. 6 files, ~379 added lines.
+**Status: clean, draft, no conflicts.**
+
+Adds `apps/paios-command-center/scripts/start.ps1`, a launcher that resolves
+`docker.exe` when a Docker Desktop restart has dropped it from the shell PATH,
+probes engine health under a hard per-call timeout rather than blocking on a
+half-started engine, and falls back to the local .NET 8 SDK when the engine
+never becomes healthy. Adds a SessionStart hook installing the .NET SDK and
+PowerShell 7 so the app can be built and run in a Claude Code web session, and
+unanchors `bin/`/`obj/` in `.gitignore`.
+
+No application code changes; both runtimes serve the same `/`, `/health` and
+`/api/workspaces` routes.
+
 ---
 
 ## Known gaps
@@ -84,8 +106,12 @@ These are stated so they are not mistaken for oversights.
   sits on the governed registry substrate.
 - **Break-glass is specified, not implemented.** `L4` denial stands on the
   normal control plane.
-- **Dev stack is unverified.** `docker compose config` validates, but first
-  bring-up has never been run against a live Docker daemon.
+- **The Docker-healthy path is still unverified.** PR #4 tests the .NET
+  fallback, the CLI-resolution path and the unreachable-engine timeout, but no
+  environment in that work had a working Docker daemon, so `docker compose up`
+  itself remains unexercised for both the Command Center and PR #2's dev stack.
+  Windows PowerShell 5.1 is likewise untested; the 5.1-sensitive constructs are
+  guarded but unproven.
 - **Knowledge base integration is absent.** The framework describes an Obsidian
   knowledge base as part of the stack. No integration code, export tooling, or
   vault interface exists in this repository — earlier export material was
@@ -98,7 +124,8 @@ These are stated so they are not mistaken for oversights.
 
 1. Resolve the `.gitignore` conflict on PR #2 and get it mergeable.
 2. Add a Python CI workflow (ruff + pytest) so PR #2's suite is enforced.
-3. Merge PR #2.
-4. Decide how the Command Center shell and the control plane connect, before
+3. Merge PR #2 and PR #4, resolving `.gitignore` in whichever lands second.
+4. Verify the Docker-healthy path once a working daemon is available.
+5. Decide how the Command Center shell and the control plane connect, before
    either grows further in its own direction.
-5. Pick up persistence or the remaining registries as separate slices.
+6. Pick up persistence or the remaining registries as separate slices.
