@@ -1,0 +1,58 @@
+name: Validate Control Plane
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'policies/**'
+      - 'pyproject.toml'
+      - '.github/workflows/validate-control-plane.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'policies/**'
+      - 'pyproject.toml'
+      - '.github/workflows/validate-control-plane.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Matches requires-python in pyproject.toml.
+          python-version: '3.12'
+
+      - name: Install package and dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Run test suite
+        run: pytest
+
+      - name: Check policy files parse
+        run: |
+          # The policy engine, risk model and tool registry are configuration, not
+          # code. A malformed JSON file here disables governance at load time
+          # rather than at review time, so it is worth failing the build over.
+          STATUS=0
+          for POLICY in policies/*.json; do
+            python -c "import json,sys; json.load(open(sys.argv[1]))" "$POLICY" \
+              || { echo "::error file=$POLICY::invalid JSON"; STATUS=1; }
+          done
+          [ "$STATUS" -eq 0 ] && echo "All policy files parse."
+          exit "$STATUS"
