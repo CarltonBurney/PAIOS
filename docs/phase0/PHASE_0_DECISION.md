@@ -13,9 +13,9 @@ skipped one.
 | 4 | Current routes identified | Met | `/`, `/health`, `/api/workspaces`; all else 404 |
 | 5 | Current APIs/services identified | Met | One service; `/api/workspaces` hard-coded |
 | 6 | Agent source-of-truth identified | Met — **absence confirmed** | 0 records; 3 static HTML labels |
-| 7 | Governance modules identified | Met — **absence confirmed** | 0 code occurrences, 0 doc occurrences |
-| 8 | Tool Registry located or absence confirmed | Met — **absence confirmed** | 0 occurrences repo-wide |
-| 9 | Execution Gateway located or absence confirmed | Met — **absence confirmed** | 0 occurrences repo-wide |
+| 7 | Governance modules identified | Met — absence confirmed **in this repository** | 0 code occurrences, 0 doc occurrences |
+| 8 | Tool Registry located or absence confirmed | Met — absence confirmed **in this repository** | 0 occurrences repo-wide |
+| 9 | Execution Gateway located or absence confirmed | Met — absence confirmed **in this repository** | 0 occurrences repo-wide |
 | 10 | Model integration points identified | Met — **absence confirmed** | grep: ollama/11434/openai/v1 models → prose only |
 | 11 | Database/vector-store usage identified | Met — **absence confirmed** | No client, ORM, or connection string |
 | 12 | Config/environment files identified | Met — **absence confirmed** | No appsettings/.env/config dir |
@@ -77,8 +77,11 @@ specification ownership sits outside this repository.
    `dashboard/llm/agents/ops`; `/api/workspaces` returns
    `dashboard/helpdesk/security/certificates`. Phase 4 aggregation is defined
    over sources that do not share a key.
-6. **Phase 2's required proof is currently unreachable.** All six stages of the
-   governance path are absent from this repository.
+6. **Phase 2's required proof is not reachable from this repository.** All six
+   stages of the governance path are absent *here*. This establishes absence in
+   this repository only — historical records describe NeuralGovernance v2.1 in
+   the wider PAIOS/DGE estate, so the classification is **BLOCKED — EXISTING
+   GOVERNANCE IMPLEMENTATION LOCATION UNRESOLVED**, pending an archaeology pass.
 7. **The shipped UI already violates "never fabricate metrics."** `04
    workspaces`, `∞ local sessions`, `GMP/IT/SSL` are literal HTML.
 

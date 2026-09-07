@@ -25,6 +25,23 @@
     .models { margin:14px 0 0; padding:0; list-style:none; display:grid; gap:6px; }
     .models li { display:flex; justify-content:space-between; gap:12px; padding:9px 12px; background:#ffffff88; font:12px monospace; }
     .empty { margin-top:14px; padding:14px 16px; background:#ffffff88; font:11px monospace; color:#6e7771; line-height:1.6; }
+    .subsystem { padding:20px; background:#f8e9ebaa; border:1px solid #27322f22; cursor:pointer; text-align:left; width:100%; font:inherit; color:inherit; display:block; }
+    .subsystem:hover, .subsystem:focus-visible { border-color:#27322f66; background:#f8e9ebee; outline:none; }
+    .subsystem[aria-disabled="true"] { cursor:default; opacity:.72; }
+    .subsystem[aria-disabled="true"]:hover { border-color:#27322f22; background:#f8e9ebaa; }
+    .subsystem header { display:flex; justify-content:space-between; align-items:center; gap:14px; border:0; padding:0; }
+    .subsystem h2 { margin:0; font-size:15px; font-weight:600; }
+    .subsystem .metrics { display:flex; flex-wrap:wrap; gap:18px; margin-top:16px; }
+    .subsystem .metric b { display:block; font-size:20px; font-weight:500; }
+    .subsystem .metric small { color:#6e7771; font-family:monospace; text-transform:uppercase; font-size:10px; }
+    .subsystem .detail { margin-top:12px; font-size:12px; color:#6e7771; line-height:1.5; }
+    .subsystem .src { margin-top:12px; font:10px monospace; color:#8a918d; }
+    .alerts { margin-top:30px; display:grid; gap:8px; }
+    .alert { display:flex; gap:12px; padding:11px 14px; background:#ffffff88; border-left:3px solid var(--edge); font-size:12px; line-height:1.5; }
+    .alert-critical { --edge:#b4543f; }
+    .alert-warning { --edge:#c98a2e; }
+    .alert-info { --edge:#9aa3a0; }
+    .alert code { font-size:11px; color:#6e7771; }
     .notice { margin-top:34px; padding:18px 20px; background:var(--sky); font-family:monospace; font-size:11px; line-height:1.6; }
     @media(max-width:700px){body{display:block}aside{min-height:auto;padding:18px;display:flex;align-items:center;justify-content:space-between} .eyebrow{display:none} nav{display:flex;gap:4px}nav button{padding:8px;font-size:11px}main{padding:32px 20px}.panel-grid{grid-template-columns:1fr 1fr}.status{font-size:9px}}
   </style>
@@ -32,7 +49,7 @@
 <body>
   <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
   <main><header><h1 id="page-title">One place<br><em>to think.</em></h1><div class="status"><i></i>Local container / ready</div></header>
-    <section class="workspace active" id="workspace-dashboard"><p>A focused shell for your local models, operational tools, and browser surfaces. Use the rail to move between workspaces without multiplying windows.</p><div class="panel-grid"><div class="panel"><b id="stat-workspaces">&mdash;</b><small>workspaces</small></div><div class="panel"><b id="stat-providers">&mdash;</b><small>providers</small></div><div class="panel"><b id="stat-models">&mdash;</b><small>models available</small></div><div class="panel"><b id="stat-services">&mdash;</b><small>services healthy</small></div></div><div class="notice">BACKEND: /api/workspaces · HEALTH: /health · MODE: LOCAL FIRST</div></section>
+    <section class="workspace active" id="workspace-dashboard"><p>Live roll-up of every subsystem. Each figure is read from the subsystem that owns it &mdash; the dashboard keeps no copy of its own. Select a card to open that workspace.</p><div id="dash-summary"></div><div id="dash-content"><div class="empty">Loading subsystems&hellip;</div></div><div id="dash-alerts"></div></section>
     <section class="workspace" id="workspace-llm"><p>Local model providers are detected and health-checked by the backend. Everything below is live state from <code>/api/providers</code> — nothing on this panel is sample data.</p><div id="llm-content"><div class="empty">Loading providers&hellip;</div></div></section>
     <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="empty">NOT IMPLEMENTED &mdash; no agent registry exists yet. This workspace will stay empty rather than display placeholder agents. See docs/phase0/CURRENT_STATE_MATRIX.md.</div></section>
     <section class="workspace" id="workspace-ops"><p>Live health for every component that can actually be checked. Services declared in <code>config/services.json</code> but without an implemented probe report <em>unknown</em> &mdash; nothing here is a static green light.</p><div id="ops-summary"></div><div id="ops-content"><div class="empty">Loading service health&hellip;</div></div></section>
@@ -86,8 +103,6 @@
 
         if (providers.length === 0) {
           target.innerHTML = `<div class="empty">No providers configured or detected.<br>Add one with <code>POST /api/providers</code>, or enable auto-detection in <code>config/providers.json</code>.</div>`;
-          document.querySelector('#stat-providers').textContent = '0';
-          document.querySelector('#stat-models').textContent = '0';
           return;
         }
 
@@ -101,14 +116,9 @@
         }));
 
         target.innerHTML = providers.map((p, i) => renderProvider(p, inventories[i])).join('');
-        document.querySelector('#stat-providers').textContent = String(providers.length).padStart(2, '0');
-        const modelCount = inventories.reduce((sum, inv) => sum + (inv && inv.models ? inv.models.length : 0), 0);
-        document.querySelector('#stat-models').textContent = String(modelCount).padStart(2, '0');
       } catch (error) {
         // A backend failure is surfaced, never swallowed into a blank panel.
         target.innerHTML = `<div class="err">Could not reach the provider API: ${escapeHtml(error.message)}</div>`;
-        document.querySelector('#stat-providers').textContent = '?';
-        document.querySelector('#stat-models').textContent = '?';
       }
     }
 
@@ -117,9 +127,7 @@
         const response = await fetch('/api/workspaces');
         if (!response.ok) throw new Error(`API returned ${response.status}`);
         const workspaces = await response.json();
-        document.querySelector('#stat-workspaces').textContent = String(workspaces.length).padStart(2, '0');
       } catch {
-        document.querySelector('#stat-workspaces').textContent = '?';
       }
     }
 
@@ -158,17 +166,71 @@
         target.innerHTML = snapshot.services.length === 0
           ? `<div class="empty">No checkable services. Declare external dependencies in <code>config/services.json</code>.</div>`
           : snapshot.services.map(renderService).join('');
-
-        const healthyStat = document.querySelector('#stat-services');
-        if (healthyStat) healthyStat.textContent = String(c.healthy || 0).padStart(2, '0');
       } catch (error) {
         summary.innerHTML = '';
         target.innerHTML = `<div class="err">Could not reach the operations API: ${escapeHtml(error.message)}</div>`;
-        const healthyStat = document.querySelector('#stat-services');
-        if (healthyStat) healthyStat.textContent = '?';
       }
     }
 
+    function activateWorkspace(key) {
+      const button = document.querySelector(`[data-workspace="${key}"]`);
+      if (button) button.click();
+    }
+
+    function renderSubsystem(sub) {
+      const state = escapeHtml(sub.status || 'unknown');
+      const notImplemented = sub.availability === 'not_implemented';
+      const metrics = (sub.metrics || []).map((m) =>
+        `<div class="metric"><b>${escapeHtml(m.value)}</b><small>${escapeHtml(m.label)}</small></div>`).join('');
+      const badge = notImplemented
+        ? '<span class="state state-unknown">not implemented</span>'
+        : `<span class="state state-${state}">${state}</span>`;
+
+      return `<button class="subsystem" type="button" data-drill="${escapeHtml(sub.workspace)}"
+                ${notImplemented ? 'aria-disabled="true"' : ''}>
+        <header><h2>${escapeHtml(sub.displayName)}</h2>${badge}</header>
+        ${metrics ? `<div class="metrics">${metrics}</div>` : ''}
+        ${sub.detail ? `<div class="detail">${escapeHtml(sub.detail)}</div>` : ''}
+        <div class="src">source: ${escapeHtml(sub.source)}</div>
+      </button>`;
+    }
+
+    async function loadDashboard() {
+      const content = document.querySelector('#dash-content');
+      const summary = document.querySelector('#dash-summary');
+      const alertBox = document.querySelector('#dash-alerts');
+      try {
+        const response = await fetch('/api/dashboard');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const snapshot = await response.json();
+
+        summary.innerHTML = `<div class="notice">SYSTEM: <span class="state state-${escapeHtml(snapshot.overall)}">${escapeHtml(snapshot.overall)}</span>
+          &nbsp;&middot;&nbsp; ${snapshot.subsystems.length} subsystems &middot; ${snapshot.alerts.length} alerts
+          &nbsp;&middot;&nbsp; ${escapeHtml(new Date(snapshot.generatedAt).toLocaleTimeString())}</div>`;
+
+        content.innerHTML = snapshot.subsystems.length === 0
+          ? '<div class="empty">No subsystems reporting.</div>'
+          : `<div class="panel-grid">${snapshot.subsystems.map(renderSubsystem).join('')}</div>`;
+
+        // Drill-down: a card opens the workspace that owns its data.
+        content.querySelectorAll('[data-drill]').forEach((card) => {
+          if (card.getAttribute('aria-disabled') === 'true') return;
+          card.addEventListener('click', () => activateWorkspace(card.dataset.drill));
+        });
+
+        alertBox.innerHTML = snapshot.alerts.length === 0
+          ? '<div class="empty">No active alerts.</div>'
+          : `<div class="alerts">${snapshot.alerts.map((a) =>
+              `<div class="alert alert-${escapeHtml(a.severity)}"><span>${escapeHtml(a.message)}</span>
+               <code>${escapeHtml(a.subsystemId)}/${escapeHtml(a.sourceId)}</code></div>`).join('')}</div>`;
+      } catch (error) {
+        summary.innerHTML = '';
+        content.innerHTML = `<div class="err">Could not reach the dashboard API: ${escapeHtml(error.message)}</div>`;
+        alertBox.innerHTML = '';
+      }
+    }
+
+    loadDashboard();
     loadWorkspaces();
     loadProviders();
     loadOperations();

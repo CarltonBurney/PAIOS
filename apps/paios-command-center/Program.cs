@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Paios.CommandCenter.Configuration;
+using Paios.CommandCenter.Dashboard;
 using Paios.CommandCenter.Operations;
 using Paios.CommandCenter.Providers;
 
@@ -63,6 +64,7 @@ builder.Services.AddSingleton<IServiceHealthCheck>(sp =>
 });
 
 builder.Services.AddSingleton<OperationsRegistry>();
+builder.Services.AddSingleton<DashboardAggregator>();
 
 var app = builder.Build();
 
@@ -118,6 +120,9 @@ app.MapPost("/api/providers", async (
         ? Results.Created($"/api/providers/{request.ProviderId}", result.Provider)
         : Results.BadRequest(new { error = result.Error });
 });
+
+app.MapGet("/api/dashboard", async (DashboardAggregator dashboard, CancellationToken cancellationToken)
+    => Results.Ok(await dashboard.GetSnapshotAsync(cancellationToken)));
 
 app.MapGet("/api/operations/services", async (OperationsRegistry operations, CancellationToken cancellationToken)
     => Results.Ok(await operations.GetSnapshotAsync(cancellationToken)));

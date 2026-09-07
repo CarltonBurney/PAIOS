@@ -13,14 +13,14 @@ not code, not config, not stub.
 | Local LLMs — health states | Absent | — | Adapters | No health model beyond ASP.NET `/health` | Implement 4-state model per spec |
 | Agent Lab — agent registry | Absent | **Mock** | Persistence | 3 hard-coded HTML labels (`GMP`/`IT`/`SSL`); 0 records | Decide store (none exists) before schema |
 | Agent Lab — execution path | Absent | — | Governance | No execution code of any kind | Blocked behind governance decision |
-| Agent Lab — governance integration | **Absent** | — | Governance Core | **Governance Core does not exist** — 0 code, 0 docs in this repo | Escalate: Phase 2 exit is unreachable as written |
+| Agent Lab — governance integration | **Not present here** | — | Governance Core | Governance Core not present in this repository — 0 code, 0 docs. Implementation location unresolved (see NeuralGovernance v2.1) | Archaeology pass across remaining PAIOS/DGE repos before any build |
 | Agent Lab — run history | Absent | — | Persistence | No datastore | After persistence decision |
 | Operations — service health checks | Absent | — | Services to check | Only 1 service exists (this app) | Scope down: most listed services aren't present |
 | Operations — error surfacing | Absent | — | Health checks | Workspace has no panels at all | After health model |
 | Command Center — aggregation | Absent | **Mock** | Phases 1–3 | Panels are literal HTML (`04`, `∞`) | Blocked until real sources exist |
-| Governance Core | **Absent** | — | — | 0 occurrences in code **and** 0 in this repo's docs | Decide: build here, or point at external system |
-| Tool Registry | **Absent** | — | Governance Core | 0 occurrences anywhere | Same decision |
-| Execution Gateway | **Absent** | — | Governance Core | 0 occurrences anywhere | Same decision |
+| Governance Core | **Not present here** | — | — | 0 occurrences in code **and** 0 in this repo's docs | Locate NeuralGovernance v2.1 before deciding to build |
+| Tool Registry | **Not present here** | — | Governance Core | 0 occurrences in this repository | Same archaeology pass |
+| Execution Gateway | **Not present here** | — | Governance Core | 0 occurrences in this repository | Same archaeology pass |
 | Data stores (Postgres/SQLite/vector) | **Absent** | — | — | No connection strings, no ORM, no client library, no persistence | Choose a store; everything stateful blocks on this |
 
 ## Verification Method
@@ -45,12 +45,17 @@ which is itself the finding.
 
 **Three gate-level problems for the phases ahead:**
 
-1. **Phase 2 is unreachable as specified.** Its exit requires tracing an agent
-   through "the REAL governance path (Identity/RBAC → Purpose Binding → Policy
-   Eval → Tool Registry → Execution Gateway → Result/Audit)". None of those six
-   stages exist. Either they live in a system outside this repository, or Phase 2
-   is a build-from-scratch effort roughly an order of magnitude larger than
-   "wire up the Agent Lab workspace".
+1. **Phase 2 is BLOCKED — EXISTING GOVERNANCE IMPLEMENTATION LOCATION
+   UNRESOLVED.** Its exit requires tracing an agent through "the REAL governance
+   path (Identity/RBAC → Purpose Binding → Policy Eval → Tool Registry →
+   Execution Gateway → Result/Audit)". None of those six stages are present in
+   *this* repository. Historical records describe NeuralGovernance v2.1 (51
+   modules, 11 layers, TypeScript, ~65 files; AuditTrail v2.0 with SHA-256
+   chaining, KillSwitch, AgentCredential, PurposeBind) associated with this
+   account's PAIOS/DGE repositories. **Do not conclude the kernel must be built
+   from scratch.** The recovery operation is an archaeology and reconciliation
+   pass across the remaining repositories and historical artifacts to locate
+   that implementation and determine which components genuinely exist.
 
 2. **Phase 3's service list assumes infrastructure that isn't here.** It names
    n8n, Postgres/SQLite, Chroma/Qdrant, Tool Registry, Execution Gateway. Exactly

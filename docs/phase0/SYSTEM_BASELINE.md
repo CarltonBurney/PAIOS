@@ -72,14 +72,14 @@ Repo-wide grep, code files vs markdown, counting occurrences:
 | deny precedence | 0 | 0 |
 | RBAC | 0 | 1 |
 
-- Governance Core location: **does not exist**
-- RBAC/Identity: does not exist
-- Purpose Binding: does not exist
+- Governance Core location: **not present in this repository**
+- RBAC/Identity: not present in this repository
+- Purpose Binding: not present in this repository
 - Tool Registry: **not found**
 - Execution Gateway: **not found**
-- Policy evaluation / deny precedence: does not exist
-- Audit trail mechanism: does not exist. "audit" appears 25 times in markdown,
-  0 times in code — entirely aspirational prose.
+- Policy evaluation / deny precedence: not present in this repository
+- Audit trail mechanism: not present in this repository. "audit" appears 25
+  times in markdown, 0 times in code.
 - Only governance artifact present: `policies/sample-governance-policies.json`
   (2 policies, PS-001/PS-002, prose controls). **Not referenced by any code** —
   verified by grep. It is an inert document.
@@ -157,9 +157,17 @@ These must be resolved before Phase 1, because downstream specs assume them:
    understates it: they are not wired to *any* data. There is no client.
 4. **Governance Core / Tool Registry / Execution Gateway** are treated by the
    handoff as existing subsystems to integrate with ("never bypass governance").
-   They do not exist in this repository in any form — not code, not even
-   documentation. Phase 2's exit criterion (trace one agent through the real
-   governance path) is currently unreachable: there is no path to trace.
+   They are **not present in this repository** in any form — not code, not even
+   documentation. This inspection establishes their absence *here*; it does not
+   establish that no implementation exists elsewhere. Historical PAIOS records
+   describe **NeuralGovernance v2.1** — a 51-module, 11-layer TypeScript
+   framework (~65 files) including AuditTrail v2.0 with SHA-256 audit chaining,
+   KillSwitch, AgentCredential and PurposeBind — associated with this account's
+   PAIOS/DGE repositories. Its implementation location is unresolved. Phase 2 is
+   therefore **BLOCKED — EXISTING GOVERNANCE IMPLEMENTATION LOCATION
+   UNRESOLVED**, not "governance does not exist", and the correct recovery is an
+   archaeology pass across the remaining repositories and historical artifacts,
+   not a ground-up kernel build.
 5. **The "never fabricate metrics" rule is already violated** by the shipped UI —
    `04 workspaces`, `∞ local sessions`, `GMP/IT/SSL` are fabricated display
    values. Fixing this is in-scope for Phase 4 and arguably Phase 0.
