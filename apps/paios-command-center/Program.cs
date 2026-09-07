@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Paios.CommandCenter.Configuration;
+using Paios.CommandCenter.Operations;
 using Paios.CommandCenter.Providers;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +22,47 @@ builder.Services.AddSingleton(sp => new OpenAiCompatibleAdapter(
     Environment.GetEnvironmentVariable));
 
 builder.Services.AddSingleton<ProviderRegistry>();
+
+// Operations: every checkable component registers one health check. The
+// aggregator isolates failures, so adding a check cannot destabilize the view.
+builder.Services.AddSingleton<IServiceHealthCheck>(sp =>
+    new ApplicationHealthCheck(sp.GetRequiredService<IHostEnvironment>()));
+
+builder.Services.AddSingleton<IServiceHealthCheck>(sp =>
+    new ProviderHealthCheck(sp.GetRequiredService<ProviderRegistry>()));
+
+builder.Services.AddSingleton<IServiceHealthCheck>(sp =>
+{
+    var contentRoot = sp.GetRequiredService<IHostEnvironment>().ContentRootPath;
+    var servicesConfigPath = Path.Combine(contentRoot, "config", "services.json");
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+
+    return new InfrastructureHealthCheck(
+        async () =>
+        {
+            // Read per request so config edits apply without a restart, and a
+            // malformed file degrades to "nothing declared" instead of throwing.
+            try
+            {
+                if (!File.Exists(servicesConfigPath))
+                {
+                    return new OperationsConfiguration();
+                }
+
+                var json = await File.ReadAllTextAsync(servicesConfigPath);
+                return JsonSerializer.Deserialize<OperationsConfiguration>(json) ?? new OperationsConfiguration();
+            }
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            {
+                logger.LogError(ex, "Could not read {Path}; monitoring nothing.", servicesConfigPath);
+                return new OperationsConfiguration();
+            }
+        },
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("providers"),
+        TimeSpan.FromSeconds(3));
+});
+
+builder.Services.AddSingleton<OperationsRegistry>();
 
 var app = builder.Build();
 
@@ -74,6 +117,15 @@ app.MapPost("/api/providers", async (
     return result.Success
         ? Results.Created($"/api/providers/{request.ProviderId}", result.Provider)
         : Results.BadRequest(new { error = result.Error });
+});
+
+app.MapGet("/api/operations/services", async (OperationsRegistry operations, CancellationToken cancellationToken)
+    => Results.Ok(await operations.GetSnapshotAsync(cancellationToken)));
+
+app.MapGet("/api/operations/services/{id}", async (string id, OperationsRegistry operations, CancellationToken cancellationToken) =>
+{
+    var service = await operations.GetServiceAsync(id, cancellationToken);
+    return service is null ? Results.NotFound(new { error = $"Unknown service '{id}'." }) : Results.Ok(service);
 });
 
 app.MapDelete("/api/providers/{id}", async (string id, ProviderRegistry registry, CancellationToken cancellationToken) =>

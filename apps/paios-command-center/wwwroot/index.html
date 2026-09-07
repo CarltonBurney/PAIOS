@@ -32,10 +32,10 @@
 <body>
   <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
   <main><header><h1 id="page-title">One place<br><em>to think.</em></h1><div class="status"><i></i>Local container / ready</div></header>
-    <section class="workspace active" id="workspace-dashboard"><p>A focused shell for your local models, operational tools, and browser surfaces. Use the rail to move between workspaces without multiplying windows.</p><div class="panel-grid"><div class="panel"><b id="stat-workspaces">&mdash;</b><small>workspaces</small></div><div class="panel"><b id="stat-providers">&mdash;</b><small>providers</small></div><div class="panel"><b id="stat-models">&mdash;</b><small>models available</small></div></div><div class="notice">BACKEND: /api/workspaces · HEALTH: /health · MODE: LOCAL FIRST</div></section>
+    <section class="workspace active" id="workspace-dashboard"><p>A focused shell for your local models, operational tools, and browser surfaces. Use the rail to move between workspaces without multiplying windows.</p><div class="panel-grid"><div class="panel"><b id="stat-workspaces">&mdash;</b><small>workspaces</small></div><div class="panel"><b id="stat-providers">&mdash;</b><small>providers</small></div><div class="panel"><b id="stat-models">&mdash;</b><small>models available</small></div><div class="panel"><b id="stat-services">&mdash;</b><small>services healthy</small></div></div><div class="notice">BACKEND: /api/workspaces · HEALTH: /health · MODE: LOCAL FIRST</div></section>
     <section class="workspace" id="workspace-llm"><p>Local model providers are detected and health-checked by the backend. Everything below is live state from <code>/api/providers</code> — nothing on this panel is sample data.</p><div id="llm-content"><div class="empty">Loading providers&hellip;</div></div></section>
     <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="empty">NOT IMPLEMENTED &mdash; no agent registry exists yet. This workspace will stay empty rather than display placeholder agents. See docs/phase0/CURRENT_STATE_MATRIX.md.</div></section>
-    <section class="workspace" id="workspace-ops"><p>Operational dashboards and browser tools can live here as embedded surfaces or routes to separate local services.</p><div class="empty">NOT IMPLEMENTED &mdash; no service health model exists yet. This workspace will stay empty rather than display placeholder services. See docs/phase0/CURRENT_STATE_MATRIX.md.</div></section>
+    <section class="workspace" id="workspace-ops"><p>Live health for every component that can actually be checked. Services declared in <code>config/services.json</code> but without an implemented probe report <em>unknown</em> &mdash; nothing here is a static green light.</p><div id="ops-summary"></div><div id="ops-content"><div class="empty">Loading service health&hellip;</div></div></section>
   </main>
   <script>
     const titles = { dashboard:'One place<br><em>to think.</em>', llm:'Local models<br><em>at hand.</em>', agents:'Agents<br><em>in concert.</em>', ops:'Work<br><em>in motion.</em>' };
@@ -123,8 +123,55 @@
       }
     }
 
+    function renderService(service) {
+      const state = escapeHtml(service.status || 'unknown');
+      const latency = service.latencyMs === null || service.latencyMs === undefined
+        ? '' : ` &middot; ${service.latencyMs} ms`;
+      const target = service.target ? `${escapeHtml(service.target)}${latency}` : (latency ? latency.replace(' &middot; ', '') : '&mdash;');
+      const error = service.errorMessage ? `<div class="err">${escapeHtml(service.errorMessage)}</div>` : '';
+      const uncheckable = service.checkable === false
+        ? ' <span class="state state-unknown">not checkable</span>' : '';
+
+      return `<div class="provider">
+        <header>
+          <div><h2>${escapeHtml(service.displayName)}</h2>
+            <div class="endpoint">${escapeHtml(service.category)} &middot; ${target}</div></div>
+          <span class="state state-${state}">${state}</span>
+        </header>
+        ${error}${uncheckable ? `<div class="empty">Declared in configuration, but no probe is implemented for it.</div>` : ''}
+      </div>`;
+    }
+
+    async function loadOperations() {
+      const target = document.querySelector('#ops-content');
+      const summary = document.querySelector('#ops-summary');
+      try {
+        const response = await fetch('/api/operations/services');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const snapshot = await response.json();
+
+        const c = snapshot.counts || {};
+        summary.innerHTML = `<div class="notice">OVERALL: <span class="state state-${escapeHtml(snapshot.overall)}">${escapeHtml(snapshot.overall)}</span>
+          &nbsp;&middot;&nbsp; ${c.healthy || 0} healthy &middot; ${c.degraded || 0} degraded &middot; ${c.unavailable || 0} unavailable &middot; ${c.unknown || 0} unknown
+          &nbsp;&middot;&nbsp; checked ${escapeHtml(new Date(snapshot.generatedAt).toLocaleTimeString())}</div>`;
+
+        target.innerHTML = snapshot.services.length === 0
+          ? `<div class="empty">No checkable services. Declare external dependencies in <code>config/services.json</code>.</div>`
+          : snapshot.services.map(renderService).join('');
+
+        const healthyStat = document.querySelector('#stat-services');
+        if (healthyStat) healthyStat.textContent = String(c.healthy || 0).padStart(2, '0');
+      } catch (error) {
+        summary.innerHTML = '';
+        target.innerHTML = `<div class="err">Could not reach the operations API: ${escapeHtml(error.message)}</div>`;
+        const healthyStat = document.querySelector('#stat-services');
+        if (healthyStat) healthyStat.textContent = '?';
+      }
+    }
+
     loadWorkspaces();
     loadProviders();
+    loadOperations();
   </script>
 </body>
 </html>
