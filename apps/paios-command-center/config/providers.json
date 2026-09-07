@@ -1,0 +1,15 @@
+{
+  "autoDetect": {
+    "ollama": {
+      "enabled": true,
+      "endpoint": "http://localhost:11434"
+    }
+  },
+  "configured": [
+    {
+      "providerId": "lmstudio-local",
+      "providerType": "openai_compatible",
+      "endpoint": "http://127.0.0.1:1234/v1"
+    }
+  ]
+}

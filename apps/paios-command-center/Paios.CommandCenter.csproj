@@ -5,4 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Provider config travels with the app so a published container has the
+         same defaults a local run does. -->
+    <None Update="config\providers.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -1,0 +1,40 @@
+name: Validate Command Center
+
+on:
+  push:
+    paths:
+      - 'apps/**'
+      - 'Paios.sln'
+      - '.github/workflows/validate-command-center.yml'
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'Paios.sln'
+      - '.github/workflows/validate-command-center.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Paios.sln
+
+      - name: Build
+        run: dotnet build Paios.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test Paios.sln --no-build --configuration Release --verbosity normal
