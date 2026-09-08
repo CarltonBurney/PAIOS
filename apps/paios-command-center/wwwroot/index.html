@@ -11,6 +11,37 @@
     .eyebrow { margin:50px 0 14px; color:#e9b8b2; font:10px monospace; text-transform:uppercase; letter-spacing:.12em; } nav { display:grid; gap:8px; } nav button { border:0; padding:14px; text-align:left; color:#d9e0d7; background:transparent; cursor:pointer; } nav button.active,nav button:hover { background:var(--olive); color:white; }
     main { padding:clamp(28px,5vw,80px); } header { display:flex; justify-content:space-between; align-items:end; gap:20px; border-bottom:1px solid #27322f33; padding-bottom:25px; } h1 { margin:0; font-size:clamp(38px,6vw,84px); line-height:.9; letter-spacing:-.07em; font-weight:500; } h1 em { color:var(--mauve); font-style:normal; } .status { font:11px monospace; text-transform:uppercase; } .status i { display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; background:var(--olive); }
     .workspace { display:none; padding-top:34px; } .workspace.active { display:block; } .workspace p { max-width:540px; color:#6e7771; line-height:1.6; } .panel-grid { display:grid; grid-template-columns:repeat(3,minmax(160px,1fr)); gap:14px; margin-top:32px; } .panel { min-height:150px; padding:20px; background:#f8e9ebaa; border:1px solid #27322f22; } .panel b { display:block; margin-bottom:35px; font-size:22px; font-weight:500; } .panel small { color:#6e7771; font-family:monospace; text-transform:uppercase; }
+    .state { display:inline-flex; align-items:center; gap:7px; font:10px monospace; text-transform:uppercase; letter-spacing:.08em; }
+    .state::before { content:''; width:9px; height:9px; border-radius:50%; background:var(--dot); }
+    .state-healthy { --dot:var(--olive); color:#4c5a37; }
+    .state-degraded { --dot:#c98a2e; color:#8a5f1d; }
+    .state-unavailable { --dot:#b4543f; color:#8c3f2f; }
+    .state-unknown { --dot:#9aa3a0; color:#6e7771; }
+    .provider { padding:18px 20px; margin-top:14px; background:#f8e9ebaa; border:1px solid #27322f22; }
+    .provider header { display:flex; justify-content:space-between; align-items:center; gap:16px; border:0; padding:0; }
+    .provider h2 { margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; }
+    .provider .endpoint { font:11px monospace; color:#6e7771; word-break:break-all; }
+    .provider .err { margin-top:10px; padding:10px 12px; background:#b4543f18; font:11px monospace; color:#8c3f2f; line-height:1.5; }
+    .models { margin:14px 0 0; padding:0; list-style:none; display:grid; gap:6px; }
+    .models li { display:flex; justify-content:space-between; gap:12px; padding:9px 12px; background:#ffffff88; font:12px monospace; }
+    .empty { margin-top:14px; padding:14px 16px; background:#ffffff88; font:11px monospace; color:#6e7771; line-height:1.6; }
+    .subsystem { padding:20px; background:#f8e9ebaa; border:1px solid #27322f22; cursor:pointer; text-align:left; width:100%; font:inherit; color:inherit; display:block; }
+    .subsystem:hover, .subsystem:focus-visible { border-color:#27322f66; background:#f8e9ebee; outline:none; }
+    .subsystem[aria-disabled="true"] { cursor:default; opacity:.72; }
+    .subsystem[aria-disabled="true"]:hover { border-color:#27322f22; background:#f8e9ebaa; }
+    .subsystem header { display:flex; justify-content:space-between; align-items:center; gap:14px; border:0; padding:0; }
+    .subsystem h2 { margin:0; font-size:15px; font-weight:600; }
+    .subsystem .metrics { display:flex; flex-wrap:wrap; gap:18px; margin-top:16px; }
+    .subsystem .metric b { display:block; font-size:20px; font-weight:500; }
+    .subsystem .metric small { color:#6e7771; font-family:monospace; text-transform:uppercase; font-size:10px; }
+    .subsystem .detail { margin-top:12px; font-size:12px; color:#6e7771; line-height:1.5; }
+    .subsystem .src { margin-top:12px; font:10px monospace; color:#8a918d; }
+    .alerts { margin-top:30px; display:grid; gap:8px; }
+    .alert { display:flex; gap:12px; padding:11px 14px; background:#ffffff88; border-left:3px solid var(--edge); font-size:12px; line-height:1.5; }
+    .alert-critical { --edge:#b4543f; }
+    .alert-warning { --edge:#c98a2e; }
+    .alert-info { --edge:#9aa3a0; }
+    .alert code { font-size:11px; color:#6e7771; }
     .notice { margin-top:34px; padding:18px 20px; background:var(--sky); font-family:monospace; font-size:11px; line-height:1.6; }
     @media(max-width:700px){body{display:block}aside{min-height:auto;padding:18px;display:flex;align-items:center;justify-content:space-between} .eyebrow{display:none} nav{display:flex;gap:4px}nav button{padding:8px;font-size:11px}main{padding:32px 20px}.panel-grid{grid-template-columns:1fr 1fr}.status{font-size:9px}}
   </style>
@@ -18,14 +49,191 @@
 <body>
   <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
   <main><header><h1 id="page-title">One place<br><em>to think.</em></h1><div class="status"><i></i>Local container / ready</div></header>
-    <section class="workspace active" id="workspace-dashboard"><p>A focused shell for your local models, operational tools, and browser surfaces. Use the rail to move between workspaces without multiplying windows.</p><div class="panel-grid"><div class="panel"><b>04</b><small>workspaces</small></div><div class="panel"><b>01</b><small>container</small></div><div class="panel"><b>∞</b><small>local sessions</small></div></div><div class="notice">BACKEND: /api/workspaces · HEALTH: /health · MODE: LOCAL FIRST</div></section>
-    <section class="workspace" id="workspace-llm"><p>Connect local LLM surfaces here through model-specific adapters or OpenAI-compatible endpoints. Keep credentials in environment variables.</p><div class="panel-grid"><div class="panel"><b>01</b><small>chat workspace</small></div><div class="panel"><b>02</b><small>context vault</small></div></div></section>
-    <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="panel-grid"><div class="panel"><b>GMP</b><small>suite</small></div><div class="panel"><b>IT</b><small>helpdesk</small></div><div class="panel"><b>SSL</b><small>monitor</small></div></div></section>
-    <section class="workspace" id="workspace-ops"><p>Operational dashboards and browser tools can live here as embedded surfaces or routes to separate local services.</p><div class="notice">NEXT WIRING POINT: add iframe or authenticated API adapter for each local application.</div></section>
+    <section class="workspace active" id="workspace-dashboard"><p>Live roll-up of every subsystem. Each figure is read from the subsystem that owns it &mdash; the dashboard keeps no copy of its own. Select a card to open that workspace.</p><div id="dash-summary"></div><div id="dash-content"><div class="empty">Loading subsystems&hellip;</div></div><div id="dash-alerts"></div></section>
+    <section class="workspace" id="workspace-llm"><p>Local model providers are detected and health-checked by the backend. Everything below is live state from <code>/api/providers</code> — nothing on this panel is sample data.</p><div id="llm-content"><div class="empty">Loading providers&hellip;</div></div></section>
+    <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="empty">NOT IMPLEMENTED &mdash; no agent registry exists yet. This workspace will stay empty rather than display placeholder agents. See docs/phase0/CURRENT_STATE_MATRIX.md.</div></section>
+    <section class="workspace" id="workspace-ops"><p>Live health for every component that can actually be checked. Services declared in <code>config/services.json</code> but without an implemented probe report <em>unknown</em> &mdash; nothing here is a static green light.</p><div id="ops-summary"></div><div id="ops-content"><div class="empty">Loading service health&hellip;</div></div></section>
   </main>
   <script>
     const titles = { dashboard:'One place<br><em>to think.</em>', llm:'Local models<br><em>at hand.</em>', agents:'Agents<br><em>in concert.</em>', ops:'Work<br><em>in motion.</em>' };
     document.querySelectorAll('[data-workspace]').forEach((button) => button.addEventListener('click', () => { const key=button.dataset.workspace; document.querySelectorAll('[data-workspace]').forEach((item)=>item.classList.toggle('active',item===button)); document.querySelectorAll('.workspace').forEach((item)=>item.classList.toggle('active',item.id===`workspace-${key}`)); document.querySelector('#page-title').innerHTML=titles[key]; }));
+
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+    // Every provider renders its own state. A provider that fails its health
+    // check is shown with that failure — it is never hidden and never drawn as
+    // if it were healthy.
+    function renderProvider(provider, models) {
+      const state = escapeHtml(provider.status || 'unknown');
+      const error = provider.errorMessage
+        ? `<div class="err">${escapeHtml(provider.errorMessage)}</div>` : '';
+      const latency = provider.latencyMs === null || provider.latencyMs === undefined
+        ? '' : ` &middot; ${provider.latencyMs} ms`;
+
+      let body;
+      if (models && models.status === 'healthy' && models.models.length > 0) {
+        body = `<ul class="models">${models.models.map((m) =>
+          `<li><span>${escapeHtml(m.modelName)}</span><span class="state state-${escapeHtml(m.availability)}">${escapeHtml(m.availability)}</span></li>`).join('')}</ul>`;
+      } else if (models && models.status === 'healthy') {
+        body = `<div class="empty">Provider reachable, but it reports no models. This is a valid state, not an error.</div>`;
+      } else if (provider.status === 'unavailable') {
+        body = `<div class="empty">Provider unreachable &mdash; no model inventory available.</div>`;
+      } else if (models && models.errorMessage) {
+        body = `<div class="err">Model list unavailable: ${escapeHtml(models.errorMessage)}</div>`;
+      } else {
+        body = `<div class="empty">No model inventory.</div>`;
+      }
+
+      return `<div class="provider">
+        <header>
+          <div><h2>${escapeHtml(provider.providerId)}</h2>
+            <div class="endpoint">${escapeHtml(provider.providerType)} &middot; ${escapeHtml(provider.endpoint)}${latency}${provider.autoDetected ? ' &middot; auto-detected' : ''}</div></div>
+          <span class="state state-${state}">${state}</span>
+        </header>
+        ${error}${body}
+      </div>`;
+    }
+
+    async function loadProviders() {
+      const target = document.querySelector('#llm-content');
+      try {
+        const response = await fetch('/api/providers');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const providers = await response.json();
+
+        if (providers.length === 0) {
+          target.innerHTML = `<div class="empty">No providers configured or detected.<br>Add one with <code>POST /api/providers</code>, or enable auto-detection in <code>config/providers.json</code>.</div>`;
+          return;
+        }
+
+        // Fetch model inventories in parallel; one failing provider must not
+        // prevent the others from rendering.
+        const inventories = await Promise.all(providers.map(async (p) => {
+          try {
+            const r = await fetch(`/api/providers/${encodeURIComponent(p.providerId)}/models`);
+            return r.ok ? await r.json() : null;
+          } catch { return null; }
+        }));
+
+        target.innerHTML = providers.map((p, i) => renderProvider(p, inventories[i])).join('');
+      } catch (error) {
+        // A backend failure is surfaced, never swallowed into a blank panel.
+        target.innerHTML = `<div class="err">Could not reach the provider API: ${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    async function loadWorkspaces() {
+      try {
+        const response = await fetch('/api/workspaces');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const workspaces = await response.json();
+      } catch {
+      }
+    }
+
+    function renderService(service) {
+      const state = escapeHtml(service.status || 'unknown');
+      const latency = service.latencyMs === null || service.latencyMs === undefined
+        ? '' : ` &middot; ${service.latencyMs} ms`;
+      const target = service.target ? `${escapeHtml(service.target)}${latency}` : (latency ? latency.replace(' &middot; ', '') : '&mdash;');
+      const error = service.errorMessage ? `<div class="err">${escapeHtml(service.errorMessage)}</div>` : '';
+      const uncheckable = service.checkable === false
+        ? ' <span class="state state-unknown">not checkable</span>' : '';
+
+      return `<div class="provider">
+        <header>
+          <div><h2>${escapeHtml(service.displayName)}</h2>
+            <div class="endpoint">${escapeHtml(service.category)} &middot; ${target}</div></div>
+          <span class="state state-${state}">${state}</span>
+        </header>
+        ${error}${uncheckable ? `<div class="empty">Declared in configuration, but no probe is implemented for it.</div>` : ''}
+      </div>`;
+    }
+
+    async function loadOperations() {
+      const target = document.querySelector('#ops-content');
+      const summary = document.querySelector('#ops-summary');
+      try {
+        const response = await fetch('/api/operations/services');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const snapshot = await response.json();
+
+        const c = snapshot.counts || {};
+        summary.innerHTML = `<div class="notice">OVERALL: <span class="state state-${escapeHtml(snapshot.overall)}">${escapeHtml(snapshot.overall)}</span>
+          &nbsp;&middot;&nbsp; ${c.healthy || 0} healthy &middot; ${c.degraded || 0} degraded &middot; ${c.unavailable || 0} unavailable &middot; ${c.unknown || 0} unknown
+          &nbsp;&middot;&nbsp; checked ${escapeHtml(new Date(snapshot.generatedAt).toLocaleTimeString())}</div>`;
+
+        target.innerHTML = snapshot.services.length === 0
+          ? `<div class="empty">No checkable services. Declare external dependencies in <code>config/services.json</code>.</div>`
+          : snapshot.services.map(renderService).join('');
+      } catch (error) {
+        summary.innerHTML = '';
+        target.innerHTML = `<div class="err">Could not reach the operations API: ${escapeHtml(error.message)}</div>`;
+      }
+    }
+
+    function activateWorkspace(key) {
+      const button = document.querySelector(`[data-workspace="${key}"]`);
+      if (button) button.click();
+    }
+
+    function renderSubsystem(sub) {
+      const state = escapeHtml(sub.status || 'unknown');
+      const notImplemented = sub.availability === 'not_implemented';
+      const metrics = (sub.metrics || []).map((m) =>
+        `<div class="metric"><b>${escapeHtml(m.value)}</b><small>${escapeHtml(m.label)}</small></div>`).join('');
+      const badge = notImplemented
+        ? '<span class="state state-unknown">not implemented</span>'
+        : `<span class="state state-${state}">${state}</span>`;
+
+      return `<button class="subsystem" type="button" data-drill="${escapeHtml(sub.workspace)}"
+                ${notImplemented ? 'aria-disabled="true"' : ''}>
+        <header><h2>${escapeHtml(sub.displayName)}</h2>${badge}</header>
+        ${metrics ? `<div class="metrics">${metrics}</div>` : ''}
+        ${sub.detail ? `<div class="detail">${escapeHtml(sub.detail)}</div>` : ''}
+        <div class="src">source: ${escapeHtml(sub.source)}</div>
+      </button>`;
+    }
+
+    async function loadDashboard() {
+      const content = document.querySelector('#dash-content');
+      const summary = document.querySelector('#dash-summary');
+      const alertBox = document.querySelector('#dash-alerts');
+      try {
+        const response = await fetch('/api/dashboard');
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const snapshot = await response.json();
+
+        summary.innerHTML = `<div class="notice">SYSTEM: <span class="state state-${escapeHtml(snapshot.overall)}">${escapeHtml(snapshot.overall)}</span>
+          &nbsp;&middot;&nbsp; ${snapshot.subsystems.length} subsystems &middot; ${snapshot.alerts.length} alerts
+          &nbsp;&middot;&nbsp; ${escapeHtml(new Date(snapshot.generatedAt).toLocaleTimeString())}</div>`;
+
+        content.innerHTML = snapshot.subsystems.length === 0
+          ? '<div class="empty">No subsystems reporting.</div>'
+          : `<div class="panel-grid">${snapshot.subsystems.map(renderSubsystem).join('')}</div>`;
+
+        // Drill-down: a card opens the workspace that owns its data.
+        content.querySelectorAll('[data-drill]').forEach((card) => {
+          if (card.getAttribute('aria-disabled') === 'true') return;
+          card.addEventListener('click', () => activateWorkspace(card.dataset.drill));
+        });
+
+        alertBox.innerHTML = snapshot.alerts.length === 0
+          ? '<div class="empty">No active alerts.</div>'
+          : `<div class="alerts">${snapshot.alerts.map((a) =>
+              `<div class="alert alert-${escapeHtml(a.severity)}"><span>${escapeHtml(a.message)}</span>
+               <code>${escapeHtml(a.subsystemId)}/${escapeHtml(a.sourceId)}</code></div>`).join('')}</div>`;
+      } catch (error) {
+        summary.innerHTML = '';
+        content.innerHTML = `<div class="err">Could not reach the dashboard API: ${escapeHtml(error.message)}</div>`;
+        alertBox.innerHTML = '';
+      }
+    }
+
+    loadDashboard();
+    loadWorkspaces();
+    loadProviders();
+    loadOperations();
   </script>
 </body>
 </html>

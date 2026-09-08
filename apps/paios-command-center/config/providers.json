@@ -1,0 +1,9 @@
+{
+  "autoDetect": {
+    "ollama": {
+      "enabled": true,
+      "endpoint": "http://localhost:11434"
+    }
+  },
+  "configured": []
+}
