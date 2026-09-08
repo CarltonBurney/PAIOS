@@ -5,7 +5,7 @@ is merged, what is in flight, and what is blocked. It is scoped to the contents
 of this repository — it intentionally records no account, credential, or
 personal data.
 
-**Snapshot date:** 2026-09-04
+**Snapshot date:** 2026-09-08
 **Default branch:** `main` (`07457fc`)
 
 ---
@@ -107,12 +107,96 @@ These are stated so they are not mistaken for oversights.
 
 ---
 
+## Handoff reconciliation — 2026-09-08
+
+A continuation handoff was supplied describing phase status and integration work.
+Its own directive states that repository evidence takes precedence over historical
+description where the two conflict. Each claim below was checked against the
+repository. `CarltonBurney/PAIOS` is the only PAIOS repository available.
+
+### Confirmed by repository evidence
+
+- **The governance implementation is Python, not TypeScript.** `src/paios/` on
+  PR #2's branch is entirely Python.
+- **It is a library with no HTTP surface.** No ASP.NET or web framework entry
+  point exists in the Python tree; a runtime bridge is genuinely required.
+- **PurposeBind, AgentCredential, KillSwitch and SHA-256 audit chaining are
+  absent.** A case-insensitive search of PR #2's branch for each name and its
+  snake_case form returns zero files. The audit record schema on the design
+  branch likewise specifies no hash, chain, or predecessor field.
+- **Only the Tool registry sits on the governed registry substrate.** Agent,
+  Model and Workflow registries are unbuilt.
+
+### Corrected by repository evidence
+
+- **PR #2 has no collision with `Program.cs` or `wwwroot/index.html`.** It
+  touches no file under `apps/` at all. The only conflict it ever carried was an
+  add/add on `.gitignore`, already resolved by merging `main` into the branch.
+  `mergeable_state` is clean. There is no merge or rebase work outstanding, and
+  no Command Center implementation at risk of being reverted by merging it.
+
+- **The Command Center on `main` is a scaffold, not a completed aggregation
+  layer.** `apps/paios-command-center/Program.cs` is 17 lines: health checks,
+  static files, and one `/api/workspaces` endpoint returning a hardcoded
+  four-entry array, three of whose entries are labelled `simulation`.
+  `wwwroot/index.html` is 31 lines. There is no telemetry, no aggregation, and no
+  provider or workspace implementation on `main` to preserve.
+
+- **Provider/model abstraction exists, but not on `main`.** `src/paios/providers/`
+  (base, mock, and an Azure AI Foundry provider) is present only on PR #2's
+  branch. It is implemented and unmerged rather than complete.
+
+### Present in the repository but absent from the handoff
+
+Two unmerged branches carry work the handoff does not mention:
+
+- **`claude/design-v77k6t`** — five architecture decision records and four policy
+  JSON schemas. This bears directly on the components listed as missing:
+  `policies/schemas/agent-policy.schema.json` already specifies the PurposeBind
+  data shape (`agent_name`, `purpose`, `allowed_actions`, `allowed_data_sources`,
+  `allowed_users`, `restricted_actions`, `approval_required_for`,
+  `audit_required`, `owner`, `status`, `retirement`, `successor_agent`), and
+  ADR-0005 records the enforcement decision behind it — constraints applied at the
+  binder as execution-time adapter restrictions rather than as prompt
+  instructions, with model output treated as untrusted throughout. Review this
+  branch before implementing PurposeBind from scratch.
+
+- **`claude/mlg-deal-intelligence-pipeline-xpnwqc`** — an applied use case with
+  governance policies and workflow documentation.
+
+### Classification
+
+| Capability | State |
+|---|---|
+| Governance kernel (policy, risk, registry, gateway, control plane, audit) | Implemented, unmerged (PR #2) |
+| Control-plane CI | Implemented, unmerged (PR #2) |
+| Provider/model abstraction | Implemented, unmerged (PR #2) |
+| Command Center shell | Implemented, on `main`, ungoverned scaffold |
+| Docker-optional launcher | Implemented, unmerged (PR #4) |
+| Policy schemas and ADRs | Implemented, unmerged (design branch) |
+| PurposeBind | Documented only (schema + ADR, no code) |
+| AgentCredential | Missing |
+| KillSwitch | Missing |
+| SHA-256 audit chaining | Missing |
+| Python-to-.NET runtime bridge | Missing |
+| Agent / Model / Workflow registries | Missing |
+| Persistence layer | Missing |
+| Agent roster | Not present in this repository |
+
+---
+
 ## Suggested order of work
 
-1. Review and merge PR #2. It is clean and carries its own CI; merging it is
-   what puts the control plane and its enforcement on `main`.
-2. Review and merge PR #4. Both merge orders were verified conflict-free.
-3. Verify the Docker-healthy path once a working daemon is available.
-4. Decide how the Command Center shell and the control plane connect, before
-   either grows further in its own direction.
-5. Pick up persistence or the remaining registries as separate slices.
+1. Review and merge PR #2. It is clean and carries its own CI. No merge or
+   rebase work is outstanding and nothing on `main` is at risk from it.
+2. Review `claude/design-v77k6t` before writing PurposeBind. Its agent-policy
+   schema and ADR-0005 already fix the data shape and the enforcement decision.
+3. Review and merge PR #4. Both merge orders were verified conflict-free.
+4. Decide how the Command Center shell reaches the control plane. The Python
+   kernel exposes no HTTP surface, so a service boundary has to be added on one
+   side or the other before the shell can show governed state.
+5. Implement AgentCredential, KillSwitch and SHA-256 audit chaining. Chaining
+   should extend the existing append-only audit trail rather than replace it.
+6. Replace the Command Center's hardcoded `/api/workspaces` array with real
+   state once a bridge exists — until then it reports nothing the system knows.
+7. Pick up persistence or the remaining registries as separate slices.
