@@ -99,6 +99,22 @@ These are stated so they are not mistaken for oversights.
   itself remains unexercised for both the Command Center and PR #2's dev stack.
   Windows PowerShell 5.1 is likewise untested; the 5.1-sensitive constructs are
   guarded but unproven.
+- **Three data substrates, unreconciled.** PR #2 holds registries and audit
+  records in memory. The dev compose stack runs Postgres, but it holds n8n's data
+  only. A third substrate, Microsoft Dataverse, is described in project planning
+  as the store for assessment, finding, remediation-task and evidence entities. No
+  Dataverse schema, binding, or reference exists anywhere in this repository. The
+  three have no defined relationship, and nothing states which is authoritative
+  for governance records.
+- **Two distinct architectures share the name PAIOS.** The recovered
+  NeuralGovernance roster describes a *runtime governance architecture* — identity,
+  memory, agent orchestration, security, audit. Project planning separately
+  describes a *consulting assessment data model* — organization profile,
+  assessment, finding, remediation task, evidence, reporting. Neither maps onto
+  the other: the roster's `L10-M01 AuditTrail` is not the assessment model's
+  evidence entity, and the roster's `L08` governance layer is not assessment
+  findings. Which of the two `src/paios/` implements should be stated explicitly
+  before either grows further, since both currently claim the same name.
 - **Knowledge base integration is absent.** The framework describes an Obsidian
   knowledge base as part of the stack. No integration code, export tooling, or
   vault interface exists in this repository — earlier export material was
