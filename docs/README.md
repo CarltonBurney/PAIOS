@@ -21,6 +21,9 @@ Explores integration concepts involving Microsoft 365, SharePoint, Teams, Power 
 **Governance Workflow Examples**
 Provides examples of governance processes, review mechanisms, and human-in-the-loop operational models.
 
+**NeuralGovernance Module Roster**
+Recovered module registry: 54 modules across 11 layers, transcribed from the PAIOS Encyclopedia reference set. Records module identity only — not specification, and not evidence of implementation.
+
 **Repository Status**
 Engineering status snapshot: what is merged, what is in flight, current blockers, and known gaps.
 

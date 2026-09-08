@@ -175,6 +175,7 @@ Two unmerged branches carry work the handoff does not mention:
 | Docker-optional launcher | Implemented, unmerged (PR #4) |
 | Policy schemas and ADRs | Implemented, unmerged (design branch) |
 | PurposeBind | Documented only (schema + ADR, no code) |
+| NeuralGovernance module roster | Recovered as identity registry — see [NEURALGOVERNANCE_MODULE_ROSTER.md](NEURALGOVERNANCE_MODULE_ROSTER.md). 54 modules, all recorded `active`, all development fields blank. Recorded status is not implementation evidence. |
 | AgentCredential | Missing |
 | KillSwitch | Missing |
 | SHA-256 audit chaining | Missing |
