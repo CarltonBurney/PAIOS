@@ -1,0 +1,66 @@
+name: Validate Command Center API
+
+on:
+  push:
+    paths:
+      - 'apps/command-center-api/**'
+      - '.github/workflows/validate-command-center-api.yml'
+  pull_request:
+    paths:
+      - 'apps/command-center-api/**'
+      - '.github/workflows/validate-command-center-api.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/command-center-api
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Matches requires-python in the app's pyproject.toml.
+          python-version: '3.12'
+
+      - name: Install package and dev dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Run test suite
+        run: pytest
+
+      - name: Check the example registry loads
+        run: |
+          # The example is what a new user copies to projects.json. If it stopped
+          # parsing, their first run would fail at startup with no way to tell that
+          # the file rather than their edit was at fault.
+          python -c "
+          from pathlib import Path
+          from paios_command_center.config import load_projects
+          projects = load_projects(Path('projects.example.json'))
+          print(f'projects.example.json loads {len(projects)} projects')
+          "
+
+      - name: Check the dashboard carries no unsubstituted placeholders
+        run: |
+          # The archive this dashboard came from shipped a template placeholder in
+          # place of the API base, which silently sent every request to a relative
+          # path that does not exist. Fail rather than ship that again.
+          if grep -rnE "__[A-Z_]+__|'port/[0-9]+'" wwwroot/; then
+            echo "::error::unsubstituted placeholder in wwwroot/"
+            exit 1
+          fi
+          echo "No placeholders in wwwroot/."
