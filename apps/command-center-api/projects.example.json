@@ -1,0 +1,20 @@
+{
+  "projects": {
+    "paios": {
+      "name": "PAIOS",
+      "emoji": "🧠",
+      "category": "Personal AI Operating System",
+      "color": "primary",
+      "pplx_project_url": "https://www.perplexity.ai/",
+      "repos": ["CarltonBurney/PAIOS"]
+    },
+    "ssl-monitor": {
+      "name": "SSL Certificate Monitor",
+      "emoji": "🔐",
+      "category": "Operational tooling",
+      "color": "blue",
+      "pplx_project_url": "https://www.perplexity.ai/",
+      "repos": []
+    }
+  }
+}

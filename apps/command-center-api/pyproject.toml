@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "paios-command-center-api"
+version = "0.1.0"
+description = "Status API and dashboard host for the PAIOS Command Center"
+readme = "README.md"
+requires-python = ">=3.12"
+# Deliberately dependency-free: the collectors use urllib and the server uses
+# http.server, so the dashboard runs from a checkout with nothing installed.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["paios_command_center"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 90
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
