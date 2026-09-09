@@ -169,9 +169,12 @@ Two unmerged branches carry work the handoff does not mention:
 - **`claude/design-v77k6t`** — five architecture decision records and four policy
   JSON schemas. This bears directly on the components listed as missing:
   `policies/schemas/agent-policy.schema.json` already specifies the PurposeBind
-  data shape (`agent_name`, `purpose`, `allowed_actions`, `allowed_data_sources`,
-  `allowed_users`, `restricted_actions`, `approval_required_for`,
-  `audit_required`, `owner`, `status`, `retirement`, `successor_agent`), and
+  data shape. Required: `agent_name`, `purpose`, `owner`, `allowed_users`,
+  `allowed_data_sources`, `review_cycle`. Optional: `allowed_actions`,
+  `restricted_actions`, `approval_required_for`, `output_target`,
+  `audit_required`, `retirement`. `retirement` is a nested object holding
+  `status`, `retired_at` and `successor_agent` — those three are **not**
+  top-level fields. `additionalProperties` is `false`. And
   ADR-0005 records the enforcement decision behind it — constraints applied at the
   binder as execution-time adapter restrictions rather than as prompt
   instructions, with model output treated as untrusted throughout. Review this
@@ -217,3 +220,60 @@ Two unmerged branches carry work the handoff does not mention:
 6. Replace the Command Center's hardcoded `/api/workspaces` array with real
    state once a bridge exists — until then it reports nothing the system knows.
 7. Pick up persistence or the remaining registries as separate slices.
+
+---
+
+## Bridge ADR and PurposeBind plan — verification, 2026-09-09
+
+Two proposed documents were supplied for reconciliation: a Python service-boundary
+ADR and a PurposeBind implementation plan. Both are proposals; neither changes
+runtime code. Every checkable claim was verified against the pinned revisions.
+
+### Verified true
+
+All six runtime mismatches the ADR identifies are real:
+
+| Claim | Verification |
+|---|---|
+| `ControlPlane` calls the provider directly and never invokes `ExecutionGateway` | `control_plane.py:192` is `self.provider.complete(request.content)`; the file contains no gateway reference. Two disconnected execution paths, confirmed. |
+| Audit follows execution rather than preceding it | `execution.py:145` types `trail` as optional; `handler(args)` runs at line 285 and `EXECUTION_ALLOWED` is emitted at 296–298, after the side effect. |
+| A missing governance context defaults to allow | `execution.py:149` is `decision = governance_context or PolicyDecision()`, and `models.py:230` declares `decision: PolicyOutcome = PolicyOutcome.ALLOW`. Absence of a policy decision is treated as permission. |
+| `Approval` carries no decision or bundle binding | `models.py:294` declares only `state`, `approver`, `decided_at` and a note. Nothing ties an approval to the decision it approves. |
+| Output review is a placeholder | `control_plane.py:212` emits `OUTPUT_REVIEWED` with `reviewed=True` unconditionally; no review occurs. |
+| Contract validation checks unknown keys only | `_contract_violations` at `execution.py:309` returns undeclared argument names. Its own docstring records that a tool with no declared schema accepts anything. Required fields, types and nested properties are unchecked. |
+
+Also verified: the design branch holds exactly 29 files; `audit-record.schema.json`
+declares `corrects` and no hash, predecessor or chain field.
+
+### Correction accepted
+
+The PurposeBind plan corrects this document. An earlier revision listed the
+agent-policy schema's fields as a flat set including `status` and
+`successor_agent`, and omitted `review_cycle`. The schema requires
+`review_cycle`, and nests `status`, `retired_at` and `successor_agent` under
+`retirement`. The field list above is corrected.
+
+### Consistent with the recovered roster
+
+Both documents hold the roster's separations. The plan states that a
+`BoundExecutionContext` "is not an implementation of AgentCredential"
+(`L07-M02`), that cancellation of a running operation "must not be advertised as
+an implemented KillSwitch" (`L09-M01`), and that SHA-256 chaining must not be
+claimed as implemented (`L10-M01`'s recorded tamper-evident property). Each of
+the three remaining distinguished modules is explicitly held out rather than
+absorbed. `PurposeBind` (`L01-M02`) is the only one the plan advances, and only
+to *specified*, not *implemented*.
+
+Two proposed modules map onto roster entries and are worth naming as such:
+`output_review.py` corresponds to `L09-M04 OutputGuard`, and `agents.py`
+corresponds to `L07-M01 AgentOrchestrator`. The proposed `knowledge_writer.py`
+has no roster counterpart.
+
+### Sequencing dependency
+
+The ADR proposes `architecture/decisions/0006-python-service-boundary.md`. That
+directory exists only on `claude/design-v77k6t`; ADRs 0001–0005 are not on `main`.
+The ADR itself flags that the number must be reserved against the destination
+index at integration time. Landing 0006 on `main` before the design branch
+integrates would orphan it from the five records it builds on — ADR-0005 in
+particular, which the PurposeBind plan depends on directly.
