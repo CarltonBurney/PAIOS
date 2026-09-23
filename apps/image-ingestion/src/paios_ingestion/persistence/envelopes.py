@@ -105,7 +105,7 @@ def _b64(value: Any) -> bytes | None:
 # -- reservation ------------------------------------------------------------------------
 
 def build_reservation(*, scope: contract.Scope, idempotency_key_sha256: str, request: Mapping[str, Any],
-                      digest: str, ingestion_id: str, asset_id: str, first_commit_id: str,
+                      digest: str, ingestion_id: str, asset_id: str, first_commit_id: str | None,
                       pinned: Mapping[str, Any], record_object_id: str, created_at: str) -> bytes:
     data = canonical_bytes({
         "format": RESERVATION_FORMAT, "contract_release": contract.CONTRACT_RELEASE,
@@ -124,8 +124,12 @@ def parse_reservation(data: bytes) -> dict:
     for field in ("idempotency_key_sha256", "request_digest"):
         p.check(_is(_SHA, r[field]), field, "must be lowercase SHA-256 hex")
     for field in ("ingestion_id", "asset_id", "first_commit_id"):
-        p.check(_is(_UUID, r[field]), field, "must be a lowercase UUID")
-    p.check(len({r["ingestion_id"], r["asset_id"], r["first_commit_id"]}) == 3, "ids", "must be distinct")
+        p.check((field == "first_commit_id" and r[field] is None) or _is(_UUID, r[field]),
+                field, "must be a lowercase UUID (first commit may be unallocated)")
+    # Shape errors must be reported before set operations on untrusted values.
+    p.raise_if_any("Reservation record is invalid")
+    ids = [r[f] for f in ("ingestion_id", "asset_id", "first_commit_id") if r[f] is not None]
+    p.check(len(set(ids)) == len(ids), "ids", "must be distinct")
     p.check(isinstance(r["pinned"], dict), "pinned", "must be an object")
     p.check(_is(_OBJECT_ID, r["record_object_id"]), "record_object_id", "must be a Drive file ID")
     p.check(_utc_ok(r["created_at"]), "created_at", "must be RFC 3339 UTC")
@@ -254,3 +258,4 @@ def parse_intent(data: bytes) -> dict:
     check_marker(marker, scope=scope, commit_id=e["commit_id"], registry=registry, payloads=decoded,
                  object_ids=ids, previous_marker_sha=previous)
     return dict(e, payload_bytes=decoded, marker_bytes=marker, registry=registry, scope_obj=scope)
+

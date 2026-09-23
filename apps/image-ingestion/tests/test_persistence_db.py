@@ -155,6 +155,126 @@ def crash_at(point):
     return fault
 
 
+# Round 2 B1-B5: tests use the real PostgreSQL fixture, never a cloud adapter.
+def test_runtime_starts_closed_even_with_identical_open_database(app, ops, drive, scope):
+    from paios_ingestion.persistence.runtime import FixtureRuntime
+    assert app.serving_ready()
+    first = FixtureRuntime(app, ops, drive)
+    assert code(lambda: first.repositories(scope)) == 'PERSISTENCE_UNAVAILABLE'
+    first.recover(complete_ledger=True, old_authority_terminated=True)
+    ingestion, _ = first.repositories(scope)
+    # A new process/composition root cannot inherit readiness from copied DB rows.
+    copied = FixtureRuntime(app, ops, drive)
+    assert app.serving_ready()
+    assert code(lambda: copied.assets(scope)) == 'PERSISTENCE_UNAVAILABLE'
+    assert code(lambda: copied.recover(complete_ledger=False, old_authority_terminated=True)) \
+        == 'PERSISTENCE_UNAVAILABLE'
+    assert not app.serving_ready()
+    assert code(lambda: ingestion.lookup_commit(scope, str(uuid.uuid4()))) == 'PERSISTENCE_UNAVAILABLE'
+    copied.recover(complete_ledger=True, old_authority_terminated=True)
+    assert app.serving_ready()
+    assert code(lambda: first.repositories(scope)) == 'PERSISTENCE_UNAVAILABLE'  # stale serving epoch
+
+
+def test_quarantine_overrides_new_and_continued_search(app, ops, gen, scope, publisher):
+    bundles = [admitted(publisher, scope, title=f'Doc {n}') for n in range(4)]
+    for b in bundles:
+        publisher.publish(scope, b[0], gen)
+    drain(ops)
+    query = dict(q='doc', tag=None, status=None, limit=1)
+    first = app.search(scope, **query)
+    first_id = first['items'][0]['asset_id']
+    hidden = next(b[0]['registry']['asset_id'] for b in bundles if b[0]['registry']['asset_id'] != first_id)
+    unrelated = next(b[0]['registry']['asset_id'] for b in bundles
+                     if b[0]['registry']['asset_id'] not in (first_id, hidden))
+    ops.quarantine(scope, hidden, 'test integrity failure')
+    ops.quarantine(contract.Scope(scope.tenant_id, 'other-workspace'), unrelated, 'other scope')
+    assert hidden not in {i['asset_id'] for i in _pages(app, scope, first, **query)}
+    current = app.search(scope, **dict(query, limit=100))['items']
+    assert hidden not in {i['asset_id'] for i in current}
+    assert unrelated in {i['asset_id'] for i in current}
+
+
+@pytest.mark.parametrize('tamper', ['delete', 'edit'])
+@pytest.mark.parametrize('committed', [False, True])
+def test_verifier_checks_reservations_before_and_after_acceptance(app, ops, drive, gen, scope,
+                                                               publisher, tamper, committed):
+    bundles = admitted(publisher, scope)
+    if committed:
+        publisher.publish(scope, bundles[0], gen)
+    r = app.reservation_record(scope, bundles[0]['registry']['ingestion_id'])
+    if tamper == 'delete':
+        drive.delete(r['record_object_id'])
+    else:
+        drive.update_content(r['record_object_id'], b'{}')
+    result = Verifier(ops, drive).run()
+    assert result and 'reservation.json' in result[0][2]
+    assert ops.quarantined(scope, r['asset_id'])
+
+
+def test_imports_reject_relocated_envelopes(app, ops, drive, gen, scope, publisher):
+    bundles = admitted(publisher, scope)
+    publisher.freeze(scope, bundles[0], gen)
+    record = app.reservation_record(scope, bundles[0]['registry']['ingestion_id'])
+    frozen = app.frozen_intent(scope, bundles[0]['commit_id'])
+    generation = ops.enter_recovery()
+    assert code(lambda: ops.import_reservation(record['record_bytes'], generation,
+                                              source_object_id='wrong-id')) == 'INTEGRITY_FAILED'
+    assert code(lambda: ops.import_intent(frozen['intent'], generation,
+                                         source_object_id='wrong-id')) == 'INTEGRITY_FAILED'
+
+
+def test_cursor_expiry_is_not_extended_by_paging(app, ops, gen, scope, publisher, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    class Clock(datetime):
+        offset = 0
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(timezone.utc) + timedelta(seconds=cls.offset)
+    monkeypatch.setattr(repository_module, 'datetime', Clock)
+    for n in range(4):
+        publisher.publish(scope, admitted(publisher, scope, title=f'Page {n}')[0], gen)
+    drain(ops)
+    query = dict(q='page', tag=None, status=None, limit=1)
+    first = app.search(scope, **query)
+    Clock.offset = repository_module.CURSOR_TTL_SECONDS - 1
+    second = app.search(scope, **query, cursor=first['next_cursor'])
+    import base64, json
+    def state(token):
+        return json.loads(base64.urlsafe_b64decode(token + '=' * (-len(token) % 4))[32:])
+    assert state(first['next_cursor'])['expires'] == state(second['next_cursor'])['expires']
+    assert state(first['next_cursor'])['indexed_at'] == state(second['next_cursor'])['indexed_at']
+    Clock.offset = repository_module.CURSOR_TTL_SECONDS + 1
+    assert code(lambda: app.search(scope, **query, cursor=second['next_cursor'])) == 'INVALID_REQUEST'
+
+
+def test_issued_protocol_adapters_commit_and_projection(app, ops, drive, scope):
+    from paios_ingestion.persistence.runtime import FixtureRuntime
+    runtime = FixtureRuntime(app, ops, drive)
+    runtime.recover(complete_ledger=True, old_authority_terminated=True)
+    ingestion, index = runtime.repositories(scope)
+    body = request()
+    args = dict(scope=scope, idempotency_key='protocol', request_digest=request_digest(scope, body), request=body)
+    reservation = ingestion.reserve(**args)
+    assert ingestion.reserve(**args).asset_id == reservation.asset_id
+    bundles = chain(scope, ids=dict(asset_id=reservation.asset_id, ingestion_id=reservation.ingestion_id,
+                                   commit_id=str(uuid.uuid4())))
+    receipts = []
+    for n, bundle in enumerate(bundles):
+        receipts.append(ingestion.commit(bundle=bundle, expected_version=n))
+    assert ingestion.commit(bundle=bundles[0], expected_version=0) == receipts[0]
+    assert code(lambda: ingestion.commit(bundle=bundles[2], expected_version=0)) == 'VERSION_CONFLICT'
+    for n in (2, 0, 1, 2):
+        index.apply_committed(receipts[n], bundles[n]['index'])
+    result = index.search(scope, q=None, tag=None, status=None, limit=10, cursor=None)
+    assert result['items'][0]['registry_version'] == 3
+    bad = deep(bundles[2]['index'])
+    bad['search_text'] = 'uncommitted'
+    assert code(lambda: index.apply_committed(receipts[2], bad)) == 'INTEGRITY_FAILED'
+    assert ingestion.get_job(scope, reservation.ingestion_id)['status'] == 'completed'
+    assert ingestion.lookup_commit(scope, bundles[2]['commit_id']) == receipts[2]
+
+
 # -- migrations ---------------------------------------------------------------------
 
 def test_migrations_are_idempotent_and_tamper_evident(urls):
@@ -724,13 +844,13 @@ def test_publication_service_is_the_only_writer_and_checks_scope(app, drive, gen
     other = contract.Scope(scope.tenant_id, "workspace-other")
     for bad in (credentials.issue("worker-1", other), token[:-4] + "AAAA",
                 credentials.issue("worker-1", scope, ttl_seconds=-1)):
-        assert code(lambda: service.commit(bad, scope=scope, bundle=bundles[0], expected_version=1)) \
+        assert code(lambda: service.commit(bad, scope=scope, bundle=bundles[0], expected_version=0)) \
             == "CONTRACT_MISMATCH"
     assert code(lambda: service.commit(credentials.issue("worker-1", other), scope=other, bundle=bundles[0],
-                                       expected_version=1)) == "CONTRACT_MISMATCH"  # bundle scope differs
+                                       expected_version=0)) == "CONTRACT_MISMATCH"  # bundle scope differs
     assert code(lambda: service.commit(token, scope=scope, bundle=bundles[0],
                                        expected_version=2)) == "VERSION_CONFLICT"
-    assert service.commit(token, scope=scope, bundle=bundles[0], expected_version=1).registry_version == 1
+    assert service.commit(token, scope=scope, bundle=bundles[0], expected_version=0).registry_version == 1
 
 
 # -- A07 projection outbox and search ------------------------------------------------------------
@@ -976,3 +1096,4 @@ def test_append_only_trigger_also_stops_the_owner(urls, gen, scope, publisher):
     with psycopg.connect(urls["admin"]) as conn:  # superuser: trigger still fires unless disabled
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute("DELETE FROM paios_ingest.audit_events")
+

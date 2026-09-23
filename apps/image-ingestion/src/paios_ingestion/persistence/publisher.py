@@ -94,12 +94,13 @@ class Publisher:
             self.repo.mark_reservation_published(scope=scope, ingestion_id=ingestion_id, reconcile=reconcile)
 
     def admit(self, scope: contract.Scope, *, idempotency_key: str, request_digest: str,
-              request: Mapping[str, Any], pinned: Mapping[str, Any] | None = None) -> contract.Reservation:
+              request: Mapping[str, Any], pinned: Mapping[str, Any] | None = None,
+              defer_first_commit: bool = False) -> contract.Reservation:
         """Reserve, then publish reservation.json before the ingestion is accepted."""
         (record_id,) = self.drive.generate_ids(1)
         reservation = self.repo.reserve(scope=scope, idempotency_key=idempotency_key,
                                         request_digest=request_digest, request=request, pinned=pinned,
-                                        record_object_id=record_id)
+                                        record_object_id=record_id, defer_first_commit=defer_first_commit)
         self.publish_reservation(scope, reservation.ingestion_id)
         return reservation
 
@@ -221,7 +222,7 @@ class PublicationService:
         self._credentials.verify(credential, scope)
         if bundle.get("scope") != envelopes.scope_json(scope):
             raise failure("CONTRACT_MISMATCH", "commit", "Bundle scope differs from the authorized scope")
-        if bundle["registry"]["canonical_record_version"] != expected_version:
+        if bundle["registry"]["canonical_record_version"] != expected_version + 1:
             raise failure("VERSION_CONFLICT", "commit", "Bundle is not the expected version",
                           details=[("expected_version", str(expected_version))])
         return self._publisher.publish(scope, bundle, self._generation, processing_fingerprint=processing_fingerprint)
@@ -283,17 +284,29 @@ class Reconciler:
 
         # 1. Rebuild reservations and intents from the DGE (after PostgreSQL loss or an old backup).
         for meta in self.drive.query(role="reservation"):
-            if self.repo.import_reservation(self._download(meta), generation) == "imported":
+            data = self._download(meta)
+            reservation = envelopes.parse_reservation(data)
+            if meta["id"] != reservation["record_object_id"]:
+                scope = contract.Scope(**reservation["scope"])
+                self.repo.quarantine(scope, reservation["asset_id"], "Reservation object ID mismatch")
+                report["quarantined"].append((scope.tenant_id, scope.workspace_id, reservation["asset_id"]))
+                continue
+            if self.repo.import_reservation(data, generation, source_object_id=meta["id"]) == "imported":
                 report["reservations_imported"] += 1
         intents = []
         for meta in self.drive.query(role="intent"):
             data = self._download(meta)
             e = envelopes.parse_intent(data)  # an unattributable envelope stops reconciliation (fail closed)
+            if meta["id"] != e["object_ids"]["intent.json"]:
+                scope = e["scope_obj"]
+                self.repo.quarantine(scope, e["asset_id"], "Intent object ID mismatch")
+                report["quarantined"].append((scope.tenant_id, scope.workspace_id, e["asset_id"]))
+                continue
             intents.append(((e["scope"]["tenant_id"], e["scope"]["workspace_id"], e["asset_id"],
-                             e["registry_version"]), data))
+                             e["registry_version"]), data, meta["id"]))
         known_commits = set()
-        for _, data in sorted(intents, key=lambda item: item[0]):
-            outcome = self.repo.import_intent(data, generation)
+        for _, data, object_id in sorted(intents, key=lambda item: item[0]):
+            outcome = self.repo.import_intent(data, generation, source_object_id=object_id)
             report["intents_imported"] += outcome == "imported"
             e = envelopes.parse_intent(data)
             known_commits.add(e["commit_id"])
@@ -338,3 +351,4 @@ class Reconciler:
         if resume:
             self.repo.resume(generation)
         return report
+

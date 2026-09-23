@@ -139,7 +139,7 @@ class CoordinatorRepository:
 
     def reserve(self, *, scope: contract.Scope, idempotency_key: str, request_digest: str,
                 request: Mapping[str, Any], pinned: Mapping[str, Any] | None = None,
-                record_object_id: str | None = None) -> contract.Reservation:
+                record_object_id: str | None = None, defer_first_commit: bool = False) -> contract.Reservation:
         """Allocate IDs once per scoped key and freeze reservation.json bytes. The
         record must be published (`mark_reservation_published`) before revision 1
         can be frozen, so no ingestion is durably accepted without it."""
@@ -149,6 +149,8 @@ class CoordinatorRepository:
             raise failure("CONTRACT_MISMATCH", "request", "request_digest does not match the scoped request")
         key_sha = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
         ingestion_id, asset_id, first_commit = (str(uuid.uuid4()) for _ in range(3))
+        if defer_first_commit:
+            first_commit = None  # protocol caller chooses the commit UUID; slot uniqueness binds it
         record = envelopes.build_reservation(
             scope=scope, idempotency_key_sha256=key_sha, request=request, digest=request_digest,
             ingestion_id=ingestion_id, asset_id=asset_id, first_commit_id=first_commit,
@@ -187,7 +189,7 @@ class CoordinatorRepository:
         if row is None:
             raise failure("NOT_FOUND", "request", "Ingestion not found")
         return {"record_object_id": row[0], "record_bytes": bytes(row[1]), "published": row[2],
-                "first_commit_id": str(row[3]), "asset_id": str(row[4]), "ingestion_id": ingestion_id}
+                "first_commit_id": str(row[3]) if row[3] is not None else None, "asset_id": str(row[4]), "ingestion_id": ingestion_id}
 
     def mark_reservation_published(self, *, scope: contract.Scope, ingestion_id: str,
                                    reconcile: bool = False) -> None:
@@ -296,7 +298,7 @@ class CoordinatorRepository:
             "SELECT asset_id, first_commit_id, record_published_at IS NOT NULL FROM ingestion_reservations "
             "WHERE ingestion_id = %s AND tenant_id = %s AND workspace_id = %s",
             (registry["ingestion_id"], scope.tenant_id, scope.workspace_id)).fetchone()
-        if row is None or str(row[0]) != registry["asset_id"] or str(row[1]) != commit_id:
+        if row is None or str(row[0]) != registry["asset_id"] or (row[1] is not None and str(row[1]) != commit_id):
             raise failure("CONTRACT_MISMATCH", "commit",
                           "Revision 1 must use the reserved asset, ingestion and first commit IDs")
         if not row[2]:
@@ -607,7 +609,13 @@ class CoordinatorRepository:
                 "SELECT tenant_id, workspace_id, asset_id, registry_version, commit_id, object_ids, intent_sha256, "
                 "registry_bytes, audit_bytes, index_bytes, marker_sha256 FROM commit_intents "
                 "WHERE state = 'published' ORDER BY tenant_id, workspace_id, asset_id, registry_version").fetchall()
-        out = []
+            reservations = conn.execute(
+                "SELECT tenant_id, workspace_id, asset_id, record_object_id, record_bytes "
+                "FROM ingestion_reservations WHERE record_published_at IS NOT NULL").fetchall()
+        out = [{"scope": contract.Scope(r[0], r[1]), "asset_id": str(r[2]),
+                "registry_version": 0, "commit_id": None,
+                "objects": {"reservation.json": (r[3], sha256_hex(bytes(r[4])))}}
+               for r in reservations]
         for r in rows:
             expected = {"intent.json": r[6], "registry.json": sha256_hex(bytes(r[7])),
                         "audit.json": sha256_hex(bytes(r[8])), "index.json": sha256_hex(bytes(r[9])),
@@ -630,11 +638,13 @@ class CoordinatorRepository:
             if not updated:
                 raise failure("NOT_FOUND", "commit", "No unpublished intent to adopt")
 
-    def import_reservation(self, record: bytes, generation: int) -> str:
+    def import_reservation(self, record: bytes, generation: int, *, source_object_id: str) -> str:
         """Rebuild a reservation row from a verified reservation.json (after PostgreSQL
         loss). Returns 'imported' or 'present'; different bytes for the same key or
         IDs are INTEGRITY_FAILED."""
         r = envelopes.parse_reservation(record)
+        if source_object_id != r["record_object_id"]:
+            raise failure("INTEGRITY_FAILED", "commit", "Reservation object ID mismatch")
         scope = contract.Scope(**r["scope"])
         with self._tx(scope) as conn:
             self._authorize(conn, generation, reconcile=True)
@@ -661,11 +671,13 @@ class CoordinatorRepository:
                  r["first_commit_id"], r["record_object_id"], bytes(record)))
         return "imported"
 
-    def import_intent(self, data: bytes, generation: int) -> str:
+    def import_intent(self, data: bytes, generation: int, *, source_object_id: str) -> str:
         """Rebuild or confirm a commit intent from a verified intent.json. Returns
         'imported', 'present' or 'conflict' (the asset is quarantined: two intents
         for one slot, or an intent that does not chain). Never allocates a new commit."""
         e = envelopes.parse_intent(data)
+        if source_object_id != e["object_ids"]["intent.json"]:
+            raise failure("INTEGRITY_FAILED", "commit", "Intent object ID mismatch")
         scope = e["scope_obj"]
         version, asset_id = e["registry_version"], e["asset_id"]
         with self._tx(scope) as conn:
@@ -850,6 +862,7 @@ class CoordinatorRepository:
             if cursor:
                 state = self._open_cursor(cursor, query_id)
                 snapshot, indexed_at = state["snapshot"], state["indexed_at"]
+                expires = state["expires"]
                 after = (datetime.fromisoformat(state["updated_at"]), state["asset_id"])
                 if state["epoch"] != epoch or conn.execute(
                         "SELECT pg_snapshot_xmin(%s::pg_snapshot) < prune_horizon FROM search_state",
@@ -859,7 +872,12 @@ class CoordinatorRepository:
             else:
                 snapshot, now = conn.execute("SELECT pg_current_snapshot()::text, now()").fetchone()
                 indexed_at, after = _utc_text(now), None
+                expires = datetime.now(timezone.utc).timestamp() + CURSOR_TTL_SECONDS
             sql = ["SELECT entry, updated_at, asset_id FROM search_rows WHERE tenant_id = %s AND workspace_id = %s",
+                   "AND NOT EXISTS (SELECT 1 FROM quarantined_assets quarantine WHERE "
+                   "quarantine.tenant_id = search_rows.tenant_id AND "
+                   "quarantine.workspace_id = search_rows.workspace_id AND "
+                   "quarantine.asset_id = search_rows.asset_id)",
                    "AND pg_visible_in_snapshot(created_xid, %s::pg_snapshot)",
                    "AND (superseded_xid IS NULL OR NOT pg_visible_in_snapshot(superseded_xid, %s::pg_snapshot))"]
             params: list[Any] = [scope.tenant_id, scope.workspace_id, snapshot, snapshot]
@@ -885,8 +903,7 @@ class CoordinatorRepository:
             next_cursor = self._make_cursor({"snapshot": snapshot, "epoch": epoch, "indexed_at": indexed_at,
                                              "query": query_id,
                                              "updated_at": last[1].isoformat(), "asset_id": str(last[2]),
-                                             "expires": datetime.now(timezone.utc).timestamp()
-                                             + CURSOR_TTL_SECONDS})
+                                             "expires": expires})
         result = {"schema_version": contract.CONTRACT_RELEASE, "items": items, "next_cursor": next_cursor,
                   "indexed_at": indexed_at}
         contract.validate("SearchResult", result)
@@ -912,3 +929,4 @@ class CoordinatorRepository:
         except (ValueError, KeyError, TypeError):
             raise failure("INVALID_REQUEST", "search", "Invalid cursor",
                           details=[("cursor", "tampered, expired or from another query")]) from None
+
