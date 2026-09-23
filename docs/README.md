@@ -21,6 +21,9 @@ Explores integration concepts involving Microsoft 365, SharePoint, Teams, Power 
 **Governance Workflow Examples**
 Provides examples of governance processes, review mechanisms, and human-in-the-loop operational models.
 
+**Image Ingestion Build Plan**
+Splits the image ingestion and OCR pipeline between architecture control and implementation. Covers the storage-of-truth model, the four implementation packets and the acceptance gate. See [IMAGE_INGESTION_BUILD_PLAN.md](IMAGE_INGESTION_BUILD_PLAN.md).
+
 ## Intended Audience
 
 This documentation is intended for:
