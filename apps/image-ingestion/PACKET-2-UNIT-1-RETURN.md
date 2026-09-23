@@ -1,6 +1,6 @@
 # Packet 2, Unit 1 Return: Coordinator Database Foundation and Fakes
 
-This is the first of the two reviewable units requested in [PACKET-2-ARCHITECTURE-DECISION.md](proposals/PACKET-2-ARCHITECTURE-DECISION.md). The second unit is the revised publication and recovery proposal, which still has to be written before any live publisher is built.
+This is the first of the two reviewable units requested in [PACKET-2-ARCHITECTURE-DECISION.md](proposals/PACKET-2-ARCHITECTURE-DECISION.md). The second unit, the revised publication and recovery proposal, is [proposals/PACKET-2-PUBLICATION-RECOVERY-REVISION.md](proposals/PACKET-2-PUBLICATION-RECOVERY-REVISION.md). No live publisher is built until it is reviewed.
 
 | Item | Value |
 |---|---|
