@@ -5,11 +5,13 @@ on:
     paths:
       - 'apps/image-ingestion/**'
       - 'contracts/image-ingestion/**'
+      - 'tools/validate_image_ingestion_contracts.py'
       - '.github/workflows/validate-image-ingestion.yml'
   pull_request:
     paths:
       - 'apps/image-ingestion/**'
       - 'contracts/image-ingestion/**'
+      - 'tools/validate_image_ingestion_contracts.py'
       - '.github/workflows/validate-image-ingestion.yml'
   workflow_dispatch:
 
@@ -46,7 +48,7 @@ jobs:
 
       - name: Validate contract package
         working-directory: contracts/image-ingestion
-        run: python acceptance/validate_contracts.py
+        run: python ../../tools/validate_image_ingestion_contracts.py
 
       - name: Record decoder library versions
         shell: python
