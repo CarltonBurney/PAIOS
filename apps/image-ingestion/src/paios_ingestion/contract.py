@@ -56,6 +56,8 @@ MediaDecoder = interfaces.MediaDecoder
 DecoderRegistry = interfaces.DecoderRegistry
 HashService = interfaces.HashService
 MetadataExtractor = interfaces.MetadataExtractor
+Reservation = interfaces.Reservation
+CommitReceipt = interfaces.CommitReceipt
 
 
 @lru_cache(maxsize=1)
