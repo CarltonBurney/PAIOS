@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paios-ingestion"
+version = "0.1.0"
+description = "PAIOS image ingestion pipeline (Packet 1: pre-OCR foundation)"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=12,<13",
+    "pillow-heif>=1.1,<2",
+    "pypdfium2>=5,<6",
+    "jsonschema>=4.18,<5",
+]
+
+[project.optional-dependencies]
+persistence = ["psycopg[binary]>=3.2,<4"]
+test = ["pytest>=8", "pypdf>=5", "cryptography>=42", "psycopg[binary]>=3.2,<4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"paios_ingestion.persistence.migrations" = ["*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

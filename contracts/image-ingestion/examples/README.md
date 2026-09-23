@@ -1,0 +1,2 @@
+# Synthetic contract fixtures
+These records demonstrate structure, not actual uploaded files or OCR execution. Storage IDs/hashes are illustrative. accepted → processing → completed is one lineage; failed is an alternative version 3 branch, never committed alongside completed. The bundle payload hashes are real hashes of canonical serialized fixture objects. The validator checks them. All examples use fictitious scope identifiers.

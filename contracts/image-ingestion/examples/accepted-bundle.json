@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "commit_id": "55555555-5555-4555-8555-555555555555",
+  "scope": {
+    "tenant_id": "example-tenant",
+    "workspace_id": "example-workspace"
+  },
+  "registry": {
+    "schema_version": "1.0.0",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "canonical_record_version": 1,
+    "status": "accepted",
+    "ingestion_id": "22222222-2222-4222-8222-222222222222",
+    "source": {
+      "connector": "onedrive",
+      "root_id": "example-root",
+      "item_id": "source-item",
+      "version": "1",
+      "original_filename": "fixture.png",
+      "declared_mime_type": null,
+      "observed_at": "2026-09-22T18:00:00Z"
+    },
+    "identity": {
+      "sha256": null,
+      "perceptual_hash": null
+    },
+    "original": null,
+    "normalized": null,
+    "ocr": null,
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "relationships": [],
+    "error": null,
+    "created_at": "2026-09-22T18:00:00Z",
+    "updated_at": "2026-09-22T18:00:00Z",
+    "last_event_id": "33333333-3333-4333-8333-333333333333",
+    "contract_release": "1.0.0",
+    "context_release_id": null,
+    "extensions": {}
+  },
+  "audit": {
+    "schema_version": "1.0.0",
+    "event_id": "33333333-3333-4333-8333-333333333333",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "ingestion_id": "22222222-2222-4222-8222-222222222222",
+    "trace_id": "55555555-5555-4555-8555-555555555555",
+    "event_type": "asset_accepted",
+    "timestamp": "2026-09-22T18:00:00Z",
+    "actor": {
+      "type": "system",
+      "id": "example-ingestion-service"
+    },
+    "pipeline": "media_ingestion",
+    "stage": "accepted",
+    "outcome": "accepted",
+    "previous_registry_version": 0,
+    "registry_version": 1,
+    "previous_event_id": null,
+    "registry_sha256": "7c82e0a10879ff969b5aa454ac0f5b6fa462afc354bb5cd90b2327cee63fac95",
+    "index_sha256": "7dfdb4efb0ba0fbda531d3904ca2b719927a8205b0d6413482232146fa2ac0da",
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "source": {
+      "connector": "onedrive",
+      "root_id": "example-root",
+      "item_id": "source-item",
+      "version": "1",
+      "original_filename": "fixture.png",
+      "declared_mime_type": null,
+      "observed_at": "2026-09-22T18:00:00Z"
+    },
+    "error": null,
+    "reason": "New ingestion durably accepted"
+  },
+  "index": {
+    "schema_version": "1.0.0",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "registry_version": 1,
+    "event_id": "33333333-3333-4333-8333-333333333333",
+    "status": "accepted",
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "search_text": "",
+    "original": null,
+    "updated_at": "2026-09-22T18:00:00Z"
+  }
+}

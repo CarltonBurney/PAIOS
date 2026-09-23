@@ -1,0 +1,101 @@
+name: Validate Image Ingestion
+
+on:
+  push:
+    paths:
+      - 'apps/image-ingestion/**'
+      - 'contracts/image-ingestion/**'
+      - 'tools/validate_image_ingestion_contracts.py'
+      - '.github/workflows/validate-image-ingestion.yml'
+  pull_request:
+    paths:
+      - 'apps/image-ingestion/**'
+      - 'contracts/image-ingestion/**'
+      - 'tools/validate_image_ingestion_contracts.py'
+      - '.github/workflows/validate-image-ingestion.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Contracts and unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r contracts/image-ingestion/acceptance/requirements.txt
+          python -m pip install -e 'apps/image-ingestion[test]'
+
+      - name: Validate contract package
+        working-directory: contracts/image-ingestion
+        run: python ../../tools/validate_image_ingestion_contracts.py
+
+      - name: Record decoder library versions
+        shell: python
+        run: |
+          import PIL, pillow_heif, pypdfium2
+          from PIL import features
+          print("pillow", PIL.__version__, "libavif", features.version("avif"))
+          print("pillow-heif", pillow_heif.__version__, pillow_heif.libheif_info())
+          print("pypdfium2", pypdfium2.version.PYPDFIUM_INFO, "pdfium", pypdfium2.version.PDFIUM_INFO)
+
+      - name: Run unit tests
+        working-directory: apps/image-ingestion
+        run: python -m pytest -v -rs
+
+  coordinator-db:
+    # Packet 2 coordinator tests against a disposable PostgreSQL (fixture only:
+    # no cloud resources, no live writes). The matrix job skips these tests.
+    name: Packet 2 coordinator tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r contracts/image-ingestion/acceptance/requirements.txt
+          python -m pip install -e 'apps/image-ingestion[test]'
+
+      - name: Run coordinator tests
+        working-directory: apps/image-ingestion
+        env:
+          PAIOS_TEST_DATABASE_URL: host=localhost port=5432 user=postgres password=postgres dbname=postgres
+        run: python -m pytest -v -rs tests/test_persistence_db.py tests/test_persistence_validation.py tests/test_persistence_fakes.py tests/test_persistence_envelopes.py

@@ -1,0 +1,39 @@
+{
+  "contract_release": "1.0.0",
+  "status": "UNCONFIGURED_NOT_DEPLOYABLE",
+  "canonical": {
+    "obsidian_vault_id": null,
+    "obsidian_section": null,
+    "dge_contracts_root_id": null,
+    "dge_records_root_id": null,
+    "approved_release_manifest_id": null
+  },
+  "working": {
+    "onedrive_root_id": null
+  },
+  "runtime": {
+    "durable_coordinator": null,
+    "database_projection": null,
+    "ocr_provider_profile": null,
+    "auth_issuer": null,
+    "service_identity": null
+  },
+  "proposed_limits_require_deployment_review": {
+    "max_source_bytes": 104857600,
+    "max_pages": 200,
+    "max_pixels_per_page": 50000000,
+    "max_total_pixels": 200000000,
+    "pdf_dpi": 300,
+    "job_timeout_seconds": 1800,
+    "cache_ttl_seconds": 86400,
+    "cache_max_bytes": 5368709120,
+    "max_search_lag_seconds": 60,
+    "worker_max_attempts": 3
+  },
+  "policy": {
+    "allow_gps": false,
+    "retention_policy_id": null,
+    "provider_data_policy_id": null,
+    "workspace_acl_source": null
+  }
+}

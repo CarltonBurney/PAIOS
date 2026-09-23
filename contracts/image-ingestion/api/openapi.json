@@ -1,0 +1,476 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PAIOS OCR Ingestion",
+    "version": "1.0.0",
+    "description": "Contract only. Relative URLs; bind to deployment configuration. JSON connector ingestion is the MVP transport."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/images/ingest": {
+      "post": {
+        "operationId": "ingestImage",
+        "summary": "Accept a version-pinned connector asset",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../schemas/contracts.schema.json#/$defs/IngestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Durably accepted; receipt is current on idempotent replay, including terminal state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/IngestAccepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "description": "Relative status URL"
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "Suggested polling delay in seconds"
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or hidden by scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency or version conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Configured limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported upload media type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid contract fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; Retry-After header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable acceptance unavailable; safe retry with same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized unexpected failure; see retryable flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ingestions/{ingestion_id}": {
+      "get": {
+        "operationId": "getIngestion",
+        "parameters": [
+          {
+            "name": "ingestion_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest durably committed job state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or hidden by scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable acceptance unavailable; safe retry with same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized unexpected failure; see retryable flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/images/{asset_id}": {
+      "get": {
+        "operationId": "getImage",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current committed Registry entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/RegistryEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found or hidden by scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable acceptance unavailable; safe retry with same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized unexpected failure; see retryable flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/images": {
+      "get": {
+        "operationId": "searchImages",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "processing",
+                "completed",
+                "partial",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized index projection, stable cursor pagination",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/SearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Durable acceptance unavailable; safe retry with same key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sanitized unexpected failure; see retryable flag",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../schemas/contracts.schema.json#/$defs/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

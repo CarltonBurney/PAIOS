@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "result_id": "44444444-4444-4444-8444-444444444444",
+  "asset_id": "11111111-1111-4111-8111-111111111111",
+  "scope": {
+    "tenant_id": "example-tenant",
+    "workspace_id": "example-workspace"
+  },
+  "status": "failed",
+  "provider": "fixture",
+  "provider_version": "1",
+  "model": null,
+  "options_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "started_at": "2026-09-22T18:00:00Z",
+  "completed_at": "2026-09-22T18:00:00Z",
+  "pages": [],
+  "full_text": null,
+  "reused_from_result_id": null,
+  "error": {
+    "schema_version": "1.0.0",
+    "code": "OCR_FAILED",
+    "message": "Provider could not recognize this page",
+    "stage": "ocr",
+    "retryable": false,
+    "retry_after_seconds": null,
+    "trace_id": "55555555-5555-4555-8555-555555555555",
+    "details": []
+  }
+}

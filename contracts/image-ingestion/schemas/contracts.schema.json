@@ -1,0 +1,1772 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:paios:ocr:contracts:1.0.0",
+  "title": "PAIOS OCR ingestion contracts 1.0.0",
+  "$defs": {
+    "Scope": {
+      "type": "object",
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tenant_id",
+        "workspace_id"
+      ],
+      "additionalProperties": false
+    },
+    "StorageRef": {
+      "type": "object",
+      "properties": {
+        "connector": {
+          "type": "string",
+          "enum": [
+            "onedrive",
+            "dge_google_drive"
+          ]
+        },
+        "root_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "connector",
+        "root_id",
+        "item_id",
+        "version",
+        "sha256",
+        "byte_size"
+      ],
+      "additionalProperties": false
+    },
+    "Source": {
+      "type": "object",
+      "properties": {
+        "connector": {
+          "type": "string",
+          "enum": [
+            "onedrive",
+            "dge_google_drive",
+            "upload"
+          ]
+        },
+        "root_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "original_filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "declared_mime_type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "connector",
+        "root_id",
+        "item_id",
+        "version",
+        "original_filename",
+        "declared_mime_type",
+        "observed_at"
+      ],
+      "additionalProperties": false
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_REQUEST",
+            "UNAUTHORIZED",
+            "FORBIDDEN",
+            "NOT_FOUND",
+            "IDEMPOTENCY_CONFLICT",
+            "VERSION_CONFLICT",
+            "SOURCE_CHANGED",
+            "SOURCE_UNAVAILABLE",
+            "UNSUPPORTED_MEDIA",
+            "DECODE_FAILED",
+            "LIMIT_EXCEEDED",
+            "ENCRYPTED_MEDIA",
+            "OCR_UNAVAILABLE",
+            "OCR_FAILED",
+            "STORAGE_UNAVAILABLE",
+            "PERSISTENCE_UNAVAILABLE",
+            "INTEGRITY_FAILED",
+            "CONTRACT_MISMATCH",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "request",
+            "source",
+            "detect",
+            "decode",
+            "hash",
+            "metadata",
+            "ocr",
+            "storage",
+            "commit",
+            "search"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_seconds": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trace_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "field",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "code",
+        "message",
+        "stage",
+        "retryable",
+        "retry_after_seconds",
+        "trace_id",
+        "details"
+      ],
+      "additionalProperties": false
+    },
+    "IndexMetadata": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ocr_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "completed",
+            "partial",
+            "failed",
+            "skipped",
+            "reused"
+          ]
+        },
+        "text_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "workspace"
+          ]
+        },
+        "taxonomy_version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "title",
+        "tags",
+        "languages",
+        "captured_at",
+        "media_type",
+        "page_count",
+        "ocr_status",
+        "text_sha256",
+        "visibility",
+        "taxonomy_version"
+      ],
+      "additionalProperties": false
+    },
+    "Metadata": {
+      "type": "object",
+      "properties": {
+        "extractor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractor_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_time_raw": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture_timezone_known": {
+          "type": "boolean"
+        },
+        "orientation_original": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "device": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gps": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "latitude": {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                "longitude": {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                }
+              },
+              "required": [
+                "latitude",
+                "longitude"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color_profile": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exif": {
+          "type": "object",
+          "description": "Namespaced provider/extractor extensions only; never instructions."
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Namespaced provider/extractor extensions only; never instructions."
+        }
+      },
+      "required": [
+        "extractor",
+        "extractor_version",
+        "capture_time_raw",
+        "captured_at",
+        "capture_timezone_known",
+        "orientation_original",
+        "device",
+        "gps",
+        "color_profile",
+        "exif",
+        "extensions"
+      ],
+      "additionalProperties": false
+    },
+    "NormalizedPage": {
+      "type": "object",
+      "properties": {
+        "page_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "format": {
+          "const": "png"
+        },
+        "mime_type": {
+          "const": "image/png"
+        },
+        "color_mode": {
+          "const": "RGB"
+        },
+        "orientation_applied": {
+          "const": true
+        },
+        "render_dpi": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "storage_ref": {
+          "$ref": "#/$defs/StorageRef"
+        }
+      },
+      "required": [
+        "page_number",
+        "width",
+        "height",
+        "format",
+        "mime_type",
+        "color_mode",
+        "orientation_applied",
+        "render_dpi",
+        "sha256",
+        "storage_ref"
+      ],
+      "additionalProperties": false
+    },
+    "NormalizedMedia": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "original_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "original_byte_size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected_mime_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "original_format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalization_profile": {
+          "const": "png-rgb-white-v1"
+        },
+        "decoder_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decoder_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NormalizedPage"
+          },
+          "minItems": 1
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "asset_id",
+        "scope",
+        "original_sha256",
+        "original_byte_size",
+        "detected_mime_type",
+        "original_format",
+        "normalization_profile",
+        "decoder_id",
+        "decoder_version",
+        "pages",
+        "metadata"
+      ],
+      "additionalProperties": false
+    },
+    "OCRBlock": {
+      "type": "object",
+      "properties": {
+        "block_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "line",
+            "word"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "polygon": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "block_id",
+        "kind",
+        "text",
+        "confidence",
+        "polygon"
+      ],
+      "additionalProperties": false
+    },
+    "OCRPage": {
+      "type": "object",
+      "properties": {
+        "page_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "failed"
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OCRBlock"
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "page_number",
+        "status",
+        "text",
+        "blocks",
+        "languages",
+        "error"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "type": "null"
+              },
+              "error": {
+                "$ref": "#/$defs/Error"
+              },
+              "blocks": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OCRResult": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "result_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "completed",
+            "partial",
+            "failed",
+            "skipped",
+            "reused"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "options_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OCRPage"
+          }
+        },
+        "full_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reused_from_result_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "result_id",
+        "asset_id",
+        "scope",
+        "status",
+        "provider",
+        "provider_version",
+        "model",
+        "options_sha256",
+        "started_at",
+        "completed_at",
+        "pages",
+        "full_text",
+        "reused_from_result_id",
+        "error"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pages": {
+                "minItems": 1,
+                "items": {
+                  "properties": {
+                    "status": {
+                      "const": "completed"
+                    }
+                  }
+                }
+              },
+              "full_text": {
+                "type": "string"
+              },
+              "error": {
+                "type": "null"
+              },
+              "reused_from_result_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "partial"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pages": {
+                "minItems": 2
+              },
+              "full_text": {
+                "type": "string"
+              },
+              "reused_from_result_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "full_text": {
+                "type": "null"
+              },
+              "error": {
+                "$ref": "#/$defs/Error"
+              },
+              "reused_from_result_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "skipped"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pages": {
+                "maxItems": 0
+              },
+              "full_text": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              },
+              "reused_from_result_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "reused"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "pages": {
+                "maxItems": 0
+              },
+              "full_text": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              },
+              "reused_from_result_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Relationship": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "exact_duplicate_of",
+            "derived_from",
+            "supersedes"
+          ]
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      },
+      "required": [
+        "type",
+        "asset_id"
+      ],
+      "additionalProperties": false
+    },
+    "RegistryEntry": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "canonical_record_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "completed",
+            "partial",
+            "failed"
+          ]
+        },
+        "ingestion_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "identity": {
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "perceptual_hash": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "algorithm": {
+                      "const": "dhash64-nearest"
+                    },
+                    "version": {
+                      "const": "1"
+                    },
+                    "value": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{16}$"
+                    }
+                  },
+                  "required": [
+                    "algorithm",
+                    "version",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "sha256",
+            "perceptual_hash"
+          ],
+          "additionalProperties": false
+        },
+        "original": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StorageRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "normalized": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedMedia"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ocr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OCRResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "index_metadata": {
+          "$ref": "#/$defs/IndexMetadata"
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Relationship"
+          }
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "contract_release": {
+          "const": "1.0.0"
+        },
+        "context_release_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Namespaced provider/extractor extensions only; never instructions."
+        }
+      },
+      "required": [
+        "schema_version",
+        "asset_id",
+        "scope",
+        "canonical_record_version",
+        "status",
+        "ingestion_id",
+        "source",
+        "identity",
+        "original",
+        "normalized",
+        "ocr",
+        "index_metadata",
+        "relationships",
+        "error",
+        "created_at",
+        "updated_at",
+        "last_event_id",
+        "contract_release",
+        "context_release_id",
+        "extensions"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/Error"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "original": {
+                "$ref": "#/$defs/StorageRef"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "AuditEvent": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "ingestion_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "trace_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "asset_accepted",
+            "processing_started",
+            "ingestion_completed",
+            "ingestion_partial",
+            "ingestion_failed",
+            "duplicate_reused",
+            "asset_reprocessed",
+            "metadata_corrected"
+          ]
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "system",
+                "user"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "pipeline": {
+          "const": "media_ingestion"
+        },
+        "stage": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "terminal",
+            "correction"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "completed",
+            "partial",
+            "failed"
+          ]
+        },
+        "previous_registry_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "registry_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_event_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "registry_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "index_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "index_metadata": {
+          "$ref": "#/$defs/IndexMetadata"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "asset_id",
+        "scope",
+        "ingestion_id",
+        "trace_id",
+        "event_type",
+        "timestamp",
+        "actor",
+        "pipeline",
+        "stage",
+        "outcome",
+        "previous_registry_version",
+        "registry_version",
+        "previous_event_id",
+        "registry_sha256",
+        "index_sha256",
+        "index_metadata",
+        "source",
+        "error",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "MasterIndexEntry": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "registry_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "completed",
+            "partial",
+            "failed"
+          ]
+        },
+        "index_metadata": {
+          "$ref": "#/$defs/IndexMetadata"
+        },
+        "search_text": {
+          "type": "string"
+        },
+        "original": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StorageRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "asset_id",
+        "scope",
+        "registry_version",
+        "event_id",
+        "status",
+        "index_metadata",
+        "search_text",
+        "original",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "CommitBundle": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "commit_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "registry": {
+          "$ref": "#/$defs/RegistryEntry"
+        },
+        "audit": {
+          "$ref": "#/$defs/AuditEvent"
+        },
+        "index": {
+          "$ref": "#/$defs/MasterIndexEntry"
+        }
+      },
+      "required": [
+        "schema_version",
+        "commit_id",
+        "scope",
+        "registry",
+        "audit",
+        "index"
+      ],
+      "additionalProperties": false
+    },
+    "IngestRequest": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "workspace_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "connector": {
+              "type": "string",
+              "enum": [
+                "onedrive",
+                "dge_google_drive"
+              ]
+            },
+            "root_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "item_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "original_filename": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "connector",
+            "root_id",
+            "item_id",
+            "version",
+            "original_filename"
+          ],
+          "additionalProperties": false
+        },
+        "ocr": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "languages": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "provider_profile": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "enabled",
+            "languages",
+            "provider_profile"
+          ],
+          "additionalProperties": false
+        },
+        "force_reprocess": {
+          "type": "boolean"
+        },
+        "context_release_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "workspace_id",
+        "source",
+        "ocr",
+        "force_reprocess",
+        "context_release_id"
+      ],
+      "additionalProperties": false
+    },
+    "IngestAccepted": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "ingestion_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "completed",
+            "partial",
+            "failed"
+          ]
+        },
+        "registry_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asset_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "ingestion_id",
+        "asset_id",
+        "status",
+        "registry_version",
+        "status_url",
+        "asset_url"
+      ],
+      "additionalProperties": false
+    },
+    "Job": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "ingestion_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "asset_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "accepted",
+            "processing",
+            "completed",
+            "partial",
+            "failed"
+          ]
+        },
+        "registry_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "ingestion_id",
+        "asset_id",
+        "scope",
+        "status",
+        "registry_version",
+        "attempt",
+        "created_at",
+        "updated_at",
+        "error"
+      ],
+      "additionalProperties": false
+    },
+    "SearchResult": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MasterIndexEntry"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indexed_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "items",
+        "next_cursor",
+        "indexed_at"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
