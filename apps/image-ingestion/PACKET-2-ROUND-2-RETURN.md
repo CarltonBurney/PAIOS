@@ -72,6 +72,25 @@ reservation/commit/replay/projection calls. The checkpoint authentication/histor
 test runs in the Ubuntu/Windows matrix. CI results are reported with the delivery
 commit; local skips are not database-pass evidence.
 
+### Results on `587f1fd`
+
+CI [run 35864765839](https://github.com/CarltonBurney/PAIOS/actions/runs/35864765839): all three jobs passed.
+
+| Job | Result |
+|---|---|
+| Contracts and unit tests (ubuntu-latest) | **208 passed, 71 skipped.** All 71 skips are `tests/test_persistence_db.py`, which is skipped without a database. |
+| Contracts and unit tests (windows-latest) | **207 passed, 72 skipped.** The 71 database tests plus the existing POSIX-only Packet 1 test. |
+| Packet 2 coordinator tests (PostgreSQL 16) | Passed. The count line is not in the retrievable log tail; the same file set passes **140** locally (below). |
+
+A local disposable PostgreSQL 16 run on the line-ending cleanup commit (code identical to `587f1fd`, verified with `git diff --ignore-cr-at-eol`) gives:
+- **279 passed, 0 skipped** for the full suite with the database
+- **208 passed, 71 skipped** without it
+- **140 passed** for the coordinator job's four `tests/test_persistence_*.py` files
+
+These counts overlap and must not be added together. The contract validator reports `contract_package_modified: false`.
+
+The follow-up commit only converts the nine files this unit touched from Windows (CRLF) or mixed line endings to LF, matching the rest of the package. It has no content change. The contract package and ChatGPT's review documents keep their original line endings.
+
 No paid resources, production writes, OCR/API module implementation, PR merge or
 canonical promotion is part of this unit.
 
