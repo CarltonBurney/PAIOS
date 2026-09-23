@@ -13,8 +13,10 @@ def test_drive_retry_with_pre_generated_id_is_safe():
     drive.faults.inject("create", "lost_response")
     with pytest.raises(TransientError):
         drive.create(file_id, name="a", parent="p", data=b"x")  # written, response lost
-    meta = drive.create(file_id, name="a", parent="p", data=b"x")  # exact retry
-    assert meta["sha256Checksum"] == hashlib.sha256(b"x").hexdigest()
+    with pytest.raises(ConflictError):  # 409 for an existing ID, like Drive
+        drive.create(file_id, name="a", parent="p", data=b"x")
+    # the retrying writer verifies the stored bytes' SHA-256 instead
+    assert drive.metadata(file_id)["sha256Checksum"] == hashlib.sha256(b"x").hexdigest()
     assert len(drive.list_children("p")) == 1  # no duplicate object
     with pytest.raises(ConflictError):
         drive.create(file_id, name="a", parent="p", data=b"y")  # same ID, other bytes

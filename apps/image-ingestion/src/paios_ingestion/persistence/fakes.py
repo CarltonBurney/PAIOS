@@ -3,9 +3,10 @@
 Fixture-only: no network, no credentials. They model the provider behaviours the
 Packet 2 decisions depend on, so adapters can later be tested against them:
 
-- Drive: files are created with pre-generated IDs (retrying the same ID with the
-  same bytes is safe; different bytes conflict); `sha256Checksum` is reported;
-  content restrictions exist but are mutable, so they do not make files immutable.
+- Drive: files are created with pre-generated IDs; creating an ID that already
+  exists is a conflict (409) whatever the bytes, so a retrying writer compares the
+  stored `sha256Checksum`, which is computed from the stored bytes; content
+  restrictions exist but are mutable, so they do not make files immutable.
 - Graph: items have historical versions; hashes expose `quickXorHash` only (no
   SHA-256, as Graph documents); a pinned version can be pruned; content can change
   between upload and verification.
@@ -59,6 +60,8 @@ def quick_xor_hash(data: bytes) -> str:
 
 
 class FakeDrive:
+    FIXTURE_ONLY = True  # the publisher refuses any adapter without this flag
+
     def __init__(self):
         self.faults = _Faults()
         self._reserved: set[str] = set()
@@ -78,10 +81,8 @@ class FakeDrive:
             raise TransientError("injected failure before write")
         if file_id not in self._reserved:
             raise ValueError("file IDs must be pre-generated")
-        existing = self._files.get(file_id)
-        if existing is not None:
-            if existing["data"] != data:
-                raise ConflictError(f"{file_id} already exists with different content")
+        if file_id in self._files:
+            raise ConflictError(f"{file_id} already exists")
         else:
             self._files[file_id] = {"id": file_id, "name": name, "parent": parent, "data": bytes(data),
                                     "appProperties": dict(app_properties or {}), "readOnly": False,
@@ -108,6 +109,11 @@ class FakeDrive:
 
     def list_children(self, parent: str) -> list[dict]:
         return [self.metadata(i) for i, f in self._files.items() if f["parent"] == parent]
+
+    def query(self, **app_properties: str) -> list[dict]:
+        """Files whose appProperties include all the given key/value pairs."""
+        return [self.metadata(i) for i, f in self._files.items()
+                if all(f["appProperties"].get(k) == v for k, v in app_properties.items())]
 
     def set_read_only(self, file_id: str, read_only: bool) -> None:
         self._files[file_id]["readOnly"] = read_only

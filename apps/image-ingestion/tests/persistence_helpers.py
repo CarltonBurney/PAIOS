@@ -1,9 +1,4 @@
-"""Bundle builders and a TEST-ONLY publisher driving the in-memory Drive fake.
-
-The publisher here exists only to exercise the database side end to end. It is
-not the production DGE publisher, which is not approved to be built yet
-(PACKET-2-ARCHITECTURE-DECISION.md, P2-A..P2-E).
-"""
+"""Bundle builders for the persistence tests (fixture data only)."""
 from __future__ import annotations
 
 import copy
@@ -12,9 +7,7 @@ import json
 import uuid
 
 from paios_ingestion import contract
-from paios_ingestion.persistence.canonical import canonical_bytes, digest, sha256_hex
-from paios_ingestion.persistence.fakes import TransientError
-from paios_ingestion.persistence.repository import MARKER_FORMAT, PAYLOAD_ROLES
+from paios_ingestion.persistence.canonical import canonical_bytes, digest, request_digest
 
 EXAMPLES = contract.CONTRACTS_DIR / "examples"
 
@@ -57,17 +50,23 @@ def set_text(bundle: dict, text: str) -> dict:
 
 
 def chain(scope: contract.Scope, terminal: str = "completed", *, title: str | None = None,
-          text: str | None = None, tags: list[str] | None = None) -> list[dict]:
-    """Versions 1..3 (accepted, processing, terminal) with fresh IDs in `scope`."""
+          text: str | None = None, tags: list[str] | None = None, ids: dict | None = None) -> list[dict]:
+    """Versions 1..3 (accepted, processing, terminal) with fresh IDs in `scope`.
+    `ids` pins asset_id, ingestion_id and the revision-1 commit_id."""
     names = ["accepted", "processing", terminal]
     bundles = [example(n) for n in names]
-    ids = set()
+    pinned, ids = ids, set()
     for b in bundles:
         ids |= {b["commit_id"], b["registry"]["asset_id"], b["registry"]["ingestion_id"],
                 b["audit"]["event_id"], b["audit"]["trace_id"]}
         if b["registry"]["ocr"]:
             ids.add(b["registry"]["ocr"]["result_id"])
     mapping = {old: str(uuid.uuid4()) for old in ids}
+    if pinned:
+        first = bundles[0]
+        mapping.update({first["registry"]["asset_id"]: pinned["asset_id"],
+                        first["registry"]["ingestion_id"]: pinned["ingestion_id"],
+                        first["commit_id"]: pinned["commit_id"]})
     mapping.update({"example-tenant": scope.tenant_id, "example-workspace": scope.workspace_id})
     out = []
     for b in bundles:
@@ -85,60 +84,24 @@ def payloads(bundle: dict) -> dict[str, bytes]:
             "index.json": canonical_bytes(bundle["index"])}
 
 
-def marker(scope, bundle, object_ids, parts, previous_marker_sha, published_at="2026-09-23T06:00:00Z") -> bytes:
-    r = bundle["registry"]
-    return canonical_bytes({
-        "format": MARKER_FORMAT, "contract_release": contract.CONTRACT_RELEASE,
-        "scope": {"tenant_id": scope.tenant_id, "workspace_id": scope.workspace_id},
-        "asset_id": r["asset_id"], "ingestion_id": r["ingestion_id"], "commit_id": bundle["commit_id"],
-        "registry_version": r["canonical_record_version"], "event_id": r["last_event_id"],
-        "files": {role: {"object_id": object_ids[role], "sha256": sha256_hex(parts[role]),
-                         "bytes": len(parts[role])} for role in PAYLOAD_ROLES},
-        "previous_marker_sha256": previous_marker_sha, "published_at": published_at})
+def request(item="item-1", languages=("en",)):
+    return {"schema_version": "1.0.0", "workspace_id": "workspace-1", "force_reprocess": False,
+            "context_release_id": None,
+            "source": {"connector": "onedrive", "root_id": "root", "item_id": item, "version": "1",
+                       "original_filename": "a.png"},
+            "ocr": {"enabled": True, "languages": list(languages), "provider_profile": "p"}}
 
 
-class TestPublisher:
-    """Freeze -> mark publishing -> upload exact frozen bytes by frozen IDs -> verify -> record."""
-
-    __test__ = False  # a helper, not a pytest test class
-
-    def __init__(self, repo, drive):
-        self.repo, self.drive = repo, drive
-        self.last_marker: dict[str, str | None] = {}
-
-    def freeze(self, scope, bundle, generation):
-        ids = dict(zip(PAYLOAD_ROLES + ("commit.json",), self.drive.generate_ids(4)))
-        parts = payloads(bundle)
-        asset = bundle["registry"]["asset_id"]
-        mark = marker(scope, bundle, ids, parts, self.last_marker.get(asset))
-        self.repo.freeze_intent(scope=scope, commit_id=bundle["commit_id"], payloads=parts,
-                                object_ids=ids, marker=mark, generation=generation)
-        return ids
-
-    def upload(self, scope, commit_id, generation, *, retries: int = 3):
-        frozen = self.repo.frozen_intent(scope, commit_id)
-        files = dict(frozen["payloads"], **{"commit.json": frozen["marker"]})
-        self.repo.mark_publishing(scope=scope, commit_id=commit_id, generation=generation)
-        for role in PAYLOAD_ROLES + ("commit.json",):  # marker last: the visibility point
-            for attempt in range(retries):
-                try:
-                    meta = self.drive.create(frozen["object_ids"][role], name=role, parent=commit_id,
-                                             data=files[role])
-                    break
-                except TransientError:
-                    if attempt == retries - 1:
-                        raise
-            assert meta["sha256Checksum"] == sha256_hex(files[role])  # remote read-back digest
-        return frozen["object_ids"]["commit.json"], sha256_hex(frozen["marker"])
-
-    def publish(self, scope, bundle, generation, fingerprint=None):
-        self.freeze(scope, bundle, generation)
-        marker_id, marker_sha = self.upload(scope, bundle["commit_id"], generation)
-        receipt = self.repo.record_published(scope=scope, commit_id=bundle["commit_id"],
-                                             marker_object_id=marker_id, marker_sha256=marker_sha,
-                                             generation=generation, processing_fingerprint=fingerprint)
-        self.last_marker[bundle["registry"]["asset_id"]] = marker_sha
-        return receipt
+def admitted(publisher, scope, terminal="completed", *, key=None, **kwargs) -> list[dict]:
+    """Admit an ingestion (reservation.json published), then build versions 1..3
+    bound to the reserved asset, ingestion and first commit IDs."""
+    key = key or str(uuid.uuid4())
+    body = request(item=key)
+    reservation = publisher.admit(scope, idempotency_key=key,
+                                  request_digest=request_digest(scope, body), request=body)
+    record = publisher.repo.reservation_record(scope, reservation.ingestion_id)
+    return chain(scope, terminal, ids={"asset_id": reservation.asset_id, "ingestion_id": reservation.ingestion_id,
+                                       "commit_id": record["first_commit_id"]}, **kwargs)
 
 
 def deep(bundle):

@@ -20,5 +20,11 @@ GRANT UPDATE ON paios_ingest.ingestion_reservations, paios_ingest.commit_intents
 -- FOR SHARE on publisher_state needs an UPDATE privilege on some column; this one is inert.
 GRANT UPDATE (changed_at) ON paios_ingest.publisher_state TO paios_app;
 GRANT UPDATE ON paios_ingest.publisher_state TO paios_ops;
-GRANT INSERT, UPDATE ON paios_ingest.search_rows TO paios_ops;
+-- Search rows are a rebuildable projection, not history: the projector may prune
+-- superseded versions once no unexpired cursor can see them.
+GRANT INSERT, UPDATE, DELETE ON paios_ingest.search_rows TO paios_ops;
+GRANT INSERT, DELETE ON paios_ingest.search_prune_marks TO paios_ops;
+GRANT UPDATE ON paios_ingest.search_state TO paios_ops;
+-- Quarantine is recorded only by the reconciler/verifier.
+GRANT INSERT ON paios_ingest.quarantined_assets TO paios_ops;
 GRANT UPDATE ON paios_ingest.projection_queue TO paios_ops;
