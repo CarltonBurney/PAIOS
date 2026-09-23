@@ -7,6 +7,9 @@ rejects the whole bundle with INTEGRITY_FAILED, listing every broken rule.
 from __future__ import annotations
 
 import hashlib
+import re
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Mapping
 
 from jsonschema import ValidationError
@@ -44,8 +47,40 @@ class _Checks:
             self.problems.append((field, reason))
 
 
+_RFC3339_UTC = re.compile(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?Z")
+
+
+def instant(value: str) -> tuple[datetime, Decimal]:
+    """Parse an RFC 3339 UTC ('Z') timestamp into a comparable instant.
+
+    Returns (whole seconds, fractional seconds) so any fractional precision
+    compares exactly: 18:00:00.100Z is later than 18:00:00Z, and .1Z equals
+    .100Z. Raises ValueError for anything else, including numeric offsets.
+    """
+    m = _RFC3339_UTC.fullmatch(value) if isinstance(value, str) else None
+    if m is None:
+        raise ValueError(f"not an RFC 3339 UTC timestamp: {value!r}")
+    whole = datetime(*(int(g) for g in m.groups()[:6]), tzinfo=timezone.utc)
+    return whole, Decimal("0" + (m.group(7) or ""))
+
+
 def _utc(value: str | None) -> bool:
-    return value is None or value.endswith("Z")
+    if value is None:
+        return True
+    try:
+        instant(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _not_before(later: str, earlier: str) -> bool:
+    """True when `later` is at or after `earlier`. Unparseable values are reported
+    separately by the UTC check, so they do not add an ordering problem here."""
+    try:
+        return instant(later) >= instant(earlier)
+    except ValueError:
+        return True
 
 
 def _check_ocr(c: _Checks, r: dict, i: dict) -> None:
@@ -89,6 +124,9 @@ def _check_ocr(c: _Checks, r: dict, i: dict) -> None:
                   f"{status} OCR has no pages, text or error")
     for field in ("started_at", "completed_at"):
         c.require(_utc(o[field]), f"ocr.{field}", "must be UTC with Z")
+    if o["started_at"] is not None and o["completed_at"] is not None:
+        c.require(_not_before(o["completed_at"], o["started_at"]), "ocr.completed_at",
+                  "must not precede started_at")
 
 
 def _check_search_text(c: _Checks, r: dict, i: dict) -> None:
@@ -136,9 +174,10 @@ def _check_status(c: _Checks, r: dict, a: dict) -> None:
         c.require(r["error"] is not None, "registry.error", "failed status requires an error")
     else:
         c.require(r["error"] is None, "registry.error", "only failed status carries an error")
-    if status == "completed" and o is not None:
-        c.require(o["status"] in ("completed", "skipped", "reused"), "ocr.status",
-                  "completed ingestion needs completed, skipped or reused OCR")
+    if status == "completed":
+        # Disabled OCR still produces a skipped result; null OCR is never complete.
+        c.require(o is not None and o["status"] in ("completed", "skipped", "reused"), "ocr.status",
+                  "completed ingestion needs a completed, skipped or reused OCR result")
     if status == "partial":
         c.require(o is not None and o["status"] == "partial", "ocr.status", "partial ingestion needs partial OCR")
     if o is not None and o["status"] == "partial":
@@ -178,7 +217,8 @@ def _check_chain(c: _Checks, r: dict, a: dict, previous: Mapping[str, Any] | Non
               "must link to the previous revision's event")
     for field in ("asset_id", "scope", "ingestion_id", "created_at"):
         c.require(r[field] == previous[field], f"registry.{field}", "must not change between revisions")
-    c.require(r["updated_at"] >= previous["updated_at"], "registry.updated_at", "must not go backwards")
+    c.require(_not_before(r["updated_at"], previous["updated_at"]), "registry.updated_at",
+              "must not go backwards")
     before, after = previous["status"], r["status"]
     if before in _TERMINAL:
         c.require(a["event_type"] == "metadata_corrected" and after == before, "status",
@@ -228,7 +268,8 @@ def validate_bundle(bundle: Mapping[str, Any], previous: Mapping[str, Any] | Non
                          ("source.observed_at", r["source"]["observed_at"]),
                          ("index_metadata.captured_at", r["index_metadata"]["captured_at"])):
         c.require(_utc(value), field, "must be UTC with Z")
-    c.require(r["created_at"] <= r["updated_at"], "registry.updated_at", "must not precede created_at")
+    c.require(_not_before(r["updated_at"], r["created_at"]), "registry.updated_at",
+              "must not precede created_at")
     _check_status(c, r, a)
     _check_media(c, r)
     _check_ocr(c, r, i)

@@ -166,3 +166,84 @@ def test_canonical_bytes():
     assert is_canonical(b'{"a":1}') and not is_canonical(b'{"a": 1}')
     with pytest.raises(ValueError):
         canonical_bytes({"x": float("inf")})
+
+
+# -- U4: a completed ingestion always carries its OCR result -------------------------------
+
+def _set_meta(b, **changes):
+    for record in (b["registry"], b["audit"], b["index"]):
+        record["index_metadata"].update(changes)
+
+
+def test_completed_ingestion_without_ocr_result_is_rejected(bundles):
+    """The exact review case: OCR null, ocr_status pending, null text hash, empty
+    search text, Audit hashes recomputed. Schema-valid, but not a complete ingestion."""
+    def strip_ocr(b):
+        b["registry"]["ocr"] = None
+        _set_meta(b, ocr_status="pending", text_sha256=None)
+        b["index"]["search_text"] = ""
+    b = completed(bundles, strip_ocr)
+    contract.validate("CommitBundle", b)  # shape alone accepts it
+    fails(b, bundles[1]["registry"], "ocr.status")
+
+
+def test_disabled_ocr_completes_with_a_skipped_result(bundles):
+    def disable(b):
+        r = b["registry"]
+        skipped = dict(r["ocr"], status="skipped", pages=[], full_text=None, error=None,
+                       reused_from_result_id=None)
+        r["ocr"] = skipped
+        _set_meta(b, ocr_status="skipped", text_sha256=None)
+        b["index"]["search_text"] = ""
+    validate_bundle(completed(bundles, disable), bundles[1]["registry"])
+
+
+# -- U5: timestamps compare as instants, not strings -------------------------------------
+
+def _at(bundle, *, created=None, updated=None):
+    b = deep(bundle)
+    if created is not None:
+        b["registry"]["created_at"] = created
+    if updated is not None:
+        b["registry"]["updated_at"] = updated
+    return rehash(b)
+
+
+@pytest.mark.parametrize("later", [
+    "2026-09-22T18:00:00.100Z",      # sorts before ...00Z as text, but is later
+    "2026-09-22T18:00:00.000001Z",
+    "2026-09-22T18:00:00.000000000Z",  # equal instant, different precision
+    "2026-09-22T18:00:00Z",          # exact equality
+])
+def test_fractional_seconds_compare_chronologically(bundles, later):
+    # created_at is 18:00:00Z throughout the example chain
+    validate_bundle(_at(bundles[0], updated=later))
+    validate_bundle(_at(bundles[2], updated=later), bundles[1]["registry"])
+
+
+def test_differing_fractional_precision_compares_by_value(bundles):
+    prev = _at(bundles[1], updated="2026-09-22T18:00:00.5Z")["registry"]
+    validate_bundle(_at(bundles[2], updated="2026-09-22T18:00:00.500000Z"), prev)
+    validate_bundle(_at(bundles[2], updated="2026-09-22T18:00:00.51Z"), prev)
+    fails(_at(bundles[2], updated="2026-09-22T18:00:00.49999Z"), prev, "registry.updated_at")
+
+
+def test_real_backwards_movement_is_rejected(bundles):
+    fails(_at(bundles[0], updated="2026-09-22T17:59:59.999Z"), None, "registry.updated_at")
+    prev = _at(bundles[1], updated="2026-09-22T18:00:01Z")["registry"]
+    fails(_at(bundles[2], updated="2026-09-22T18:00:00.999999Z"), prev, "registry.updated_at")
+
+
+def test_non_utc_timestamps_are_still_rejected(bundles):
+    for value in ("2026-09-22T18:00:00+00:00", "2026-09-22T18:00:00z", "2026-09-22 18:00:00Z"):
+        with pytest.raises(contract.PipelineFailure):
+            validate_bundle(_at(bundles[0], updated=value))
+
+
+def test_instant_parser():
+    from paios_ingestion.persistence.validation import instant
+    assert instant("2026-09-22T18:00:00.1Z") == instant("2026-09-22T18:00:00.100Z")
+    assert instant("2026-09-22T18:00:00.100Z") > instant("2026-09-22T18:00:00Z")
+    for bad in ("2026-09-22T18:00:00+01:00", "2026-02-30T00:00:00Z", "2026-09-22T18:00:00.Z", None):
+        with pytest.raises(ValueError):
+            instant(bad)
