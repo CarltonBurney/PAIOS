@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0.0",
+  "commit_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "scope": {
+    "tenant_id": "example-tenant",
+    "workspace_id": "example-workspace"
+  },
+  "registry": {
+    "schema_version": "1.0.0",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "canonical_record_version": 3,
+    "status": "failed",
+    "ingestion_id": "22222222-2222-4222-8222-222222222222",
+    "source": {
+      "connector": "onedrive",
+      "root_id": "example-root",
+      "item_id": "source-item",
+      "version": "1",
+      "original_filename": "fixture.png",
+      "declared_mime_type": null,
+      "observed_at": "2026-09-22T18:00:00Z"
+    },
+    "identity": {
+      "sha256": null,
+      "perceptual_hash": null
+    },
+    "original": null,
+    "normalized": null,
+    "ocr": null,
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "relationships": [],
+    "error": {
+      "schema_version": "1.0.0",
+      "code": "DECODE_FAILED",
+      "message": "Synthetic corrupt image",
+      "stage": "decode",
+      "retryable": false,
+      "retry_after_seconds": null,
+      "trace_id": "55555555-5555-4555-8555-555555555555",
+      "details": []
+    },
+    "created_at": "2026-09-22T18:00:00Z",
+    "updated_at": "2026-09-22T18:00:00Z",
+    "last_event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "contract_release": "1.0.0",
+    "context_release_id": null,
+    "extensions": {}
+  },
+  "audit": {
+    "schema_version": "1.0.0",
+    "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "ingestion_id": "22222222-2222-4222-8222-222222222222",
+    "trace_id": "55555555-5555-4555-8555-555555555555",
+    "event_type": "ingestion_failed",
+    "timestamp": "2026-09-22T18:00:00Z",
+    "actor": {
+      "type": "system",
+      "id": "example-ingestion-service"
+    },
+    "pipeline": "media_ingestion",
+    "stage": "terminal",
+    "outcome": "failed",
+    "previous_registry_version": 2,
+    "registry_version": 3,
+    "previous_event_id": "77777777-7777-4777-8777-777777777777",
+    "registry_sha256": "61ef23f6acd1f4b168f871466208fcad67388ba94cf71915cce9abfb6b292568",
+    "index_sha256": "8aa0adf2f99ff87c7ab10082d8c913135cf52a89e71f9e01e13e08dae396127f",
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "source": {
+      "connector": "onedrive",
+      "root_id": "example-root",
+      "item_id": "source-item",
+      "version": "1",
+      "original_filename": "fixture.png",
+      "declared_mime_type": null,
+      "observed_at": "2026-09-22T18:00:00Z"
+    },
+    "error": {
+      "schema_version": "1.0.0",
+      "code": "DECODE_FAILED",
+      "message": "Synthetic corrupt image",
+      "stage": "decode",
+      "retryable": false,
+      "retry_after_seconds": null,
+      "trace_id": "55555555-5555-4555-8555-555555555555",
+      "details": []
+    },
+    "reason": "Synthetic failed revision"
+  },
+  "index": {
+    "schema_version": "1.0.0",
+    "asset_id": "11111111-1111-4111-8111-111111111111",
+    "scope": {
+      "tenant_id": "example-tenant",
+      "workspace_id": "example-workspace"
+    },
+    "registry_version": 3,
+    "event_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "status": "failed",
+    "index_metadata": {
+      "title": "fixture.png",
+      "tags": [],
+      "languages": [],
+      "captured_at": null,
+      "media_type": null,
+      "page_count": 0,
+      "ocr_status": "pending",
+      "text_sha256": null,
+      "visibility": "workspace",
+      "taxonomy_version": null
+    },
+    "search_text": "",
+    "original": null,
+    "updated_at": "2026-09-22T18:00:00Z"
+  }
+}

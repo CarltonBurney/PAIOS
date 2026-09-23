@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "workspace_id": "example-workspace",
+  "source": {
+    "connector": "onedrive",
+    "root_id": "example-root",
+    "item_id": "source-item",
+    "version": "1",
+    "original_filename": "fixture.png"
+  },
+  "ocr": {
+    "enabled": true,
+    "languages": [
+      "en"
+    ],
+    "provider_profile": "example-profile"
+  },
+  "force_reprocess": false,
+  "context_release_id": null
+}
