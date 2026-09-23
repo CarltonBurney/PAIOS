@@ -16,10 +16,18 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
-    name: Contracts and Packet 1 unit tests
-    runs-on: ubuntu-latest
+    name: Contracts and Packet 1 unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Check out repository
@@ -41,11 +49,13 @@ jobs:
         run: python acceptance/validate_contracts.py
 
       - name: Record decoder library versions
+        shell: python
         run: |
-          python -c "import PIL, pillow_heif, pypdfium2; from PIL import features; \
-          print('pillow', PIL.__version__, 'libavif', features.version('avif')); \
-          print('pillow-heif', pillow_heif.__version__, pillow_heif.libheif_info()); \
-          print('pypdfium2', pypdfium2.version.PYPDFIUM_INFO, 'pdfium', pypdfium2.version.PDFIUM_INFO)"
+          import PIL, pillow_heif, pypdfium2
+          from PIL import features
+          print("pillow", PIL.__version__, "libavif", features.version("avif"))
+          print("pillow-heif", pillow_heif.__version__, pillow_heif.libheif_info())
+          print("pypdfium2", pypdfium2.version.PYPDFIUM_INFO, "pdfium", pypdfium2.version.PDFIUM_INFO)
 
       - name: Run unit tests
         working-directory: apps/image-ingestion

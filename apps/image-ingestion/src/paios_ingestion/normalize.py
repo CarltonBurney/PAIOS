@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import io
 import math
+from contextlib import nullcontext
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,6 +20,11 @@ PNG_COMPRESS_LEVEL = 6
 _ALPHA_MODES = {"RGBA", "LA", "PA", "RGBa", "La"}
 _SRGB = ImageCms.createProfile("sRGB")
 
+# Set by the caller that owns output_dir (e.g. IngestionFoundation with WorkCache.allocate).
+# Called with the encoded byte count; the page is written inside the returned context,
+# so local cache budgets are enforced on actual output, not only on source size.
+page_allocator: ContextVar = ContextVar("page_allocator", default=None)
+
 
 def parse_utc(value: str) -> datetime:
     if not value.endswith("Z"):
@@ -31,10 +38,10 @@ def check_deadline(limits: contract.Limits, stage: str = "decode") -> None:
                       details=[("deadline_utc", "deadline passed before completion")])
 
 
-def check_source_size(source: Path, limits: contract.Limits) -> int:
+def check_source_size(source: Path, limits: contract.Limits, stage: str = "decode") -> int:
     size = source.stat().st_size
     if size > limits.max_source_bytes:
-        raise failure("LIMIT_EXCEEDED", "decode", "Source exceeds the configured byte limit",
+        raise failure("LIMIT_EXCEEDED", stage, "Source exceeds the configured byte limit",
                       details=[("max_source_bytes", f"{size} > {limits.max_source_bytes}")])
     return size
 
@@ -74,9 +81,18 @@ def pdf_pixel_size(width_pt: float, height_pt: float, dpi: int) -> tuple[int, in
     return math.ceil(width_pt * dpi / 72), math.ceil(height_pt * dpi / 72)
 
 
-def _is_srgb(icc: bytes) -> bool:
+def _source_profile(icc: bytes) -> ImageCms.ImageCmsProfile:
+    """Parse an embedded profile; an unreadable explicit profile fails the decode."""
     try:
-        description = ImageCms.getProfileDescription(ImageCms.ImageCmsProfile(io.BytesIO(icc)))
+        return ImageCms.ImageCmsProfile(io.BytesIO(icc))
+    except (ImageCms.PyCMSError, OSError, TypeError, ValueError):
+        raise failure("DECODE_FAILED", "decode", "Embedded ICC profile could not be read",
+                      details=[("icc_profile", "unreadable")]) from None
+
+
+def _is_srgb(profile: ImageCms.ImageCmsProfile) -> bool:
+    try:
+        description = ImageCms.getProfileDescription(profile)
     except (ImageCms.PyCMSError, OSError, TypeError):
         return False
     return description.strip().lower().startswith("srgb")
@@ -112,16 +128,19 @@ def to_srgb_rgb(image: Image.Image) -> tuple[Image.Image, dict]:
         base = image.convert("RGB")
 
     if icc:
-        if _is_srgb(icc) and base.mode == "RGB":
+        profile = _source_profile(icc)
+        if _is_srgb(profile) and base.mode == "RGB":
             note["icc"] = "srgb"
         else:
             try:
                 base = ImageCms.profileToProfile(
-                    base, ImageCms.ImageCmsProfile(io.BytesIO(icc)), _SRGB,
+                    base, profile, _SRGB,
                     renderingIntent=ImageCms.Intent.PERCEPTUAL, outputMode="RGB")
-                note["icc"] = "converted"
             except (ImageCms.PyCMSError, OSError, ValueError):
-                note["icc"] = "unusable"  # reported, then treated as untagged
+                # Never label pixels sRGB when their explicit profile could not be applied.
+                raise failure("DECODE_FAILED", "decode", "Embedded ICC profile could not be applied",
+                              details=[("icc_profile", f"not applicable to mode {base.mode}")]) from None
+            note["icc"] = "converted"
     rgb = base.convert("RGB")
 
     if alpha is not None:
@@ -137,12 +156,17 @@ def write_page(image: Image.Image, output_dir: Path, page_number: int,
     """Encode a normalized RGB page to PNG (no ancillary metadata) and hash the encoded bytes."""
     if image.mode != "RGB":
         raise ValueError("write_page requires RGB input")
+    # Pixels only: Pillow would otherwise re-embed info["icc_profile"]/EXIF from the
+    # source. Output is untagged 8-bit sRGB by definition of png-rgb-white-v1.
+    clean = Image.frombytes("RGB", image.size, image.tobytes())
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", compress_level=PNG_COMPRESS_LEVEL)
+    clean.save(buffer, format="PNG", compress_level=PNG_COMPRESS_LEVEL)
     data = buffer.getvalue()
     path = output_dir / f"page-{page_number:06d}.png"
-    with open(path, "xb") as handle:  # never overwrite an existing page
-        handle.write(data)
+    allocator = page_allocator.get()
+    with allocator(len(data)) if allocator else nullcontext():
+        with open(path, "xb") as handle:  # never overwrite an existing page
+            handle.write(data)
     return contract.LocalPage(
         page_number=page_number, path=path, width=image.width, height=image.height,
         sha256=hashlib.sha256(data).hexdigest(), render_dpi=render_dpi)

@@ -169,6 +169,9 @@ class OriginalMetadataExtractor:
 
     def _image(self, source: Path, mime: str, allow_gps: bool) -> dict:
         with open_image(source, mime) as image:
+            if "primary" in image.info and not image.info["primary"]:
+                from .decoders.heif_decoder import primary_index
+                image.seek(primary_index(image))  # HEIF: metadata of the primary image
             exif = image.getexif()
             exif_ifd = dict(exif.get_ifd(_EXIF_IFD)) if exif else {}
             metadata = _empty()

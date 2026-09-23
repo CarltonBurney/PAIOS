@@ -37,7 +37,10 @@ class PriorityDecoderRegistry:
         return candidates[0][1]
 
 
-def default_registry() -> PriorityDecoderRegistry:
+def default_registry(*, allow_gps: bool = False) -> PriorityDecoderRegistry:
+    """One registry per metadata policy; decoders keep the policy immutably."""
     from .decoders import HeifDecoder, PdfDecoder, PillowDecoder
 
-    return PriorityDecoderRegistry([(10, PillowDecoder()), (10, HeifDecoder()), (10, PdfDecoder())])
+    decoders = (PillowDecoder(allow_gps=allow_gps), HeifDecoder(allow_gps=allow_gps),
+                PdfDecoder(allow_gps=allow_gps))
+    return PriorityDecoderRegistry([(10, d) for d in decoders])

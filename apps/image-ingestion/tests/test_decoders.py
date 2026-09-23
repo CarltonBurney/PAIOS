@@ -8,6 +8,7 @@ import fixtures as fx
 from conftest import error_of, limited
 from paios_ingestion import contract
 from paios_ingestion.decoders import HeifDecoder, PdfDecoder, PillowDecoder
+from paios_ingestion.metadata import OriginalMetadataExtractor
 from paios_ingestion.normalize import to_srgb_rgb
 
 
@@ -98,16 +99,106 @@ def test_palette_transparency():
     assert note["alpha_composited"]
 
 
-def test_srgb_profile_is_recognised_and_unusable_profile_is_reported():
+def test_srgb_profile_is_recognised():
     from PIL import ImageCms
     srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     image = Image.new("RGB", (1, 1), (10, 20, 30))
     image.info["icc_profile"] = srgb
     rgb, note = to_srgb_rgb(image)
     assert note["icc"] == "srgb" and rgb.getpixel((0, 0)) == (10, 20, 30)
-    image.info["icc_profile"] = b"not a profile"
+
+
+def test_non_srgb_profile_is_converted():
+    # Linear-gamma RGB: 128 linear is ~0.502 intensity, which sRGB encodes as ~188.
+    image = Image.new("RGB", (2, 1))
+    image.putpixel((0, 0), (128, 128, 128))
+    image.putpixel((1, 0), (255, 64, 0))
+    image.info["icc_profile"] = fx.linear_rgb_icc()
     rgb, note = to_srgb_rgb(image)
-    assert note["icc"] == "unusable" and rgb.getpixel((0, 0)) == (10, 20, 30)
+    assert note["icc"] == "converted"
+    assert near(rgb.getpixel((0, 0)), (188, 188, 188), tolerance=2)
+    assert near(rgb.getpixel((1, 0)), (255, 137, 0), tolerance=3)
+
+
+@pytest.mark.parametrize("icc", [b"not a profile", b"\0" * 200])
+def test_unreadable_profile_fails_decode(icc):
+    image = Image.new("RGB", (1, 1), (10, 20, 30))
+    image.info["icc_profile"] = icc
+    with pytest.raises(contract.PipelineFailure) as excinfo:
+        to_srgb_rgb(image)
+    error = error_of(excinfo)
+    assert (error["code"], error["stage"]) == ("DECODE_FAILED", "decode")
+
+
+def test_profile_that_cannot_apply_to_mode_fails():
+    from PIL import ImageCms
+    gray = ImageCms.ImageCmsProfile(ImageCms.createProfile("LAB")).tobytes()
+    image = Image.new("RGB", (1, 1), (10, 20, 30))
+    image.info["icc_profile"] = gray
+    with pytest.raises(contract.PipelineFailure) as excinfo:
+        to_srgb_rgb(image)
+    assert error_of(excinfo)["code"] == "DECODE_FAILED"
+
+
+def test_png_with_profile_converts_through_decoder(tmp_path, limits):
+    path = tmp_path / "linear.png"
+    Image.new("RGB", (4, 4), (128, 128, 128)).save(path, "PNG", icc_profile=fx.linear_rgb_icc())
+    (page,) = decode(PillowDecoder(), path, "image/png", tmp_path, limits).pages
+    assert near(page_image(page).getpixel((0, 0)), (188, 188, 188), tolerance=2)
+
+
+@pytest.mark.parametrize("icc", ["srgb", "linear"])
+def test_output_png_carries_no_source_color_or_exif_metadata(tmp_path, limits, icc):
+    from PIL import ImageCms
+    profile = (ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+               if icc == "srgb" else fx.linear_rgb_icc())
+    path = fx.save(fx.two_tone(), tmp_path / "a.jpg", "JPEG", icc_profile=profile,
+                   exif=fx.exif_bytes(1, make="Cam"))
+    (page,) = decode(PillowDecoder(), path, "image/jpeg", tmp_path, limits).pages
+    with Image.open(page.path) as out:
+        out.load()
+        assert "icc_profile" not in out.info and "exif" not in out.info
+        assert not out.getexif()
+
+
+def test_heif_uses_primary_image_only(tmp_path, limits):
+    from paios_ingestion.hashing import ContentHashService
+    result = decode(HeifDecoder(), fx.heif_collection(tmp_path / "c.heic", primary=1),
+                    "image/heic", tmp_path, limits)
+    assert len(result.pages) == 1 and result.pages[0].page_number == 1
+    assert_rotated_once(result)  # primary is the 40x20 two-tone with orientation 6
+    assert result.metadata["device"] == "Primary Camera"
+    hasher = ContentHashService()
+    assert hasher.perceptual_hash(result.pages[0])["value"] == "0000000000000000"
+
+    other = decode(HeifDecoder(), fx.heif_collection(tmp_path / "d.heic", primary=0),
+                   "image/heic", tmp_path / "d", limits)
+    assert [(p.width, p.height) for p in other.pages] == [(36, 20)]
+    assert near(page_image(other.pages[0]).getpixel((0, 10)), (255, 255, 255), tolerance=12)
+    assert hasher.perceptual_hash(other.pages[0])["value"] == "ffffffffffffffff"
+    assert other.metadata["device"] is None and other.metadata["orientation_original"] in (None, 1)
+
+
+def test_owner_password_only_pdf_is_rejected(tmp_path, limits):
+    with pytest.raises(contract.PipelineFailure) as excinfo:
+        decode(PdfDecoder(), fx.owner_only_encrypted_pdf(tmp_path / "o.pdf"), "application/pdf",
+               tmp_path, limits)
+    assert error_of(excinfo)["code"] == "ENCRYPTED_MEDIA"
+    assert list((tmp_path / "out").iterdir()) == []
+
+
+def test_metadata_extraction_past_deadline_fails(tmp_path):
+    class SlowExtractor(OriginalMetadataExtractor):
+        def extract(self, *args):
+            time.sleep(1.2)
+            return super().extract(*args)
+
+    from conftest import deadline
+    with pytest.raises(contract.PipelineFailure) as excinfo:
+        decode(PillowDecoder(SlowExtractor()), fx.jpeg(tmp_path / "a.jpg"), "image/jpeg", tmp_path,
+               limited(deadline_utc=deadline(1)))
+    assert error_of(excinfo)["details"][0]["field"] == "deadline_utc"
+    assert list((tmp_path / "out").iterdir()) == []
 
 
 def test_webp_and_bmp(tmp_path, limits):

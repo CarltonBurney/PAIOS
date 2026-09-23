@@ -18,9 +18,14 @@ class BaseDecoder:
 
     def __init__(self, metadata_extractor: contract.MetadataExtractor | None = None,
                  allow_gps: bool = False):
-        # GPS policy is server configuration: decode() carries no policy argument.
+        # GPS policy is immutable server configuration bound to the workspace's
+        # metadata_policy_version: build one decoder per policy, never mutate a shared one.
         self.metadata_extractor = metadata_extractor or OriginalMetadataExtractor()
-        self.allow_gps = allow_gps
+        self._allow_gps = allow_gps
+
+    @property
+    def allow_gps(self) -> bool:
+        return self._allow_gps
 
     def supports(self, detected_mime_type: str) -> bool:
         return detected_mime_type in self.mime_types
@@ -41,6 +46,7 @@ class BaseDecoder:
             metadata = self.metadata_extractor.extract(source, detected_mime_type, self.allow_gps)
             metadata["extensions"]["paios.normalize"] = {"pages": notes}
             contract.validate("Metadata", metadata)
+            check_deadline(limits)  # metadata extraction must not push a late result through
             return contract.DecodeResult(
                 pages=pages, metadata=metadata, decoder_id=self.decoder_id,
                 decoder_version=self.decoder_version, original_format=original_format)

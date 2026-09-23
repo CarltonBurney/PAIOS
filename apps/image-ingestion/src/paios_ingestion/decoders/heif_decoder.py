@@ -18,6 +18,21 @@ def _version() -> str:
     return f"pillow-heif-{pillow_heif.__version__}+libheif-{libheif}+pillow-{PIL.__version__}+libavif-{libavif}"
 
 
+def primary_index(image) -> int:
+    """Index of the HEIF primary image (pillow-heif marks it with info["primary"]).
+
+    pillow-heif opens at the primary image; checking the current frame first avoids
+    seeking away, which would drop per-frame info such as original_orientation.
+    """
+    if image.info.get("primary"):
+        return image.tell()
+    for index in range(getattr(image, "n_frames", 1)):
+        image.seek(index)
+        if image.info.get("primary"):
+            return index
+    raise failure("DECODE_FAILED", "decode", "HEIF file declares no primary image")
+
+
 class HeifDecoder(BaseDecoder):
     decoder_id = "heif"
     mime_types = frozenset({"image/heic", "image/heif", "image/avif"})
@@ -33,9 +48,15 @@ class HeifDecoder(BaseDecoder):
             # libheif applies irot/imir while decoding and resets EXIF orientation to 1,
             # so a second transpose would rotate twice. Pillow's AVIF plugin exposes the
             # container transform as EXIF orientation instead, which is applied once here.
-            if mime == "image/avif" and getattr(image, "n_frames", 1) > 1:
-                raise failure("UNSUPPORTED_MEDIA", "decode", "Animated AVIF is not supported",
-                              details=[("frames", str(image.n_frames))])
+            if mime == "image/avif":
+                if getattr(image, "n_frames", 1) > 1:
+                    raise failure("UNSUPPORTED_MEDIA", "decode", "Animated AVIF is not supported",
+                                  details=[("frames", str(image.n_frames))])
+                frames = [0]
+            else:
+                # Still HEIF uses the primary image only; other top-level images
+                # (bursts, alternates) are not pages.
+                frames = [primary_index(image)]
             pages, notes = decode_frames(image, mime, output_dir, limits, budget, written,
-                                         transpose=mime == "image/avif")
+                                         transpose=mime == "image/avif", frames=frames)
             return pages, "AVIF" if mime == "image/avif" else "HEIF", notes

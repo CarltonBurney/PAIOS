@@ -13,18 +13,21 @@ from ..normalize import check_deadline, to_srgb_rgb, write_page
 _ANIMATED = {"image/png", "image/webp", "image/gif"}
 
 
-def decode_frames(image, mime, output_dir, limits, budget, written, *, transpose: bool):
-    """Normalize every frame of an opened Pillow image as pages 1..N."""
-    frames = getattr(image, "n_frames", 1)
-    if frames > 1 and mime in _ANIMATED:
-        raise failure("UNSUPPORTED_MEDIA", "decode", "Animated images are not supported",
-                      details=[("frames", str(frames))])
-    budget.check_page_count(frames)
-    for index in range(frames):  # sizes are header reads; check all before decoding any
+def decode_frames(image, mime, output_dir, limits, budget, written, *, transpose: bool,
+                  frames=None):
+    """Normalize the given frame indexes (default: every frame) as pages 1..N."""
+    if frames is None:
+        count = getattr(image, "n_frames", 1)
+        if count > 1 and mime in _ANIMATED:
+            raise failure("UNSUPPORTED_MEDIA", "decode", "Animated images are not supported",
+                          details=[("frames", str(count))])
+        frames = list(range(count))
+    budget.check_page_count(len(frames))
+    for page_number, index in enumerate(frames, 1):  # header reads; check all before decoding
         image.seek(index)
-        budget.admit(index + 1, *image.size)
+        budget.admit(page_number, *image.size)
     pages, notes = [], []
-    for index in range(frames):
+    for page_number, index in enumerate(frames, 1):
         check_deadline(limits)
         image.seek(index)
         frame = ImageOps.exif_transpose(image) if transpose else image.copy()
@@ -32,10 +35,10 @@ def decode_frames(image, mime, output_dir, limits, budget, written, *, transpose
         if "icc_profile" in image.info:
             frame.info.setdefault("icc_profile", image.info["icc_profile"])
         rgb, note = to_srgb_rgb(frame)
-        page = write_page(rgb, output_dir, index + 1, None)
+        page = write_page(rgb, output_dir, page_number, None)
         written.append(page.path)
         pages.append(page)
-        notes.append({"page_number": index + 1, **note})
+        notes.append({"page_number": page_number, **note})
     return pages, notes
 
 

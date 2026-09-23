@@ -1,4 +1,4 @@
-"""Packet 1 stage runner: detect -> hash -> decode/normalize -> metadata -> perceptual hash.
+"""Packet 1 stage runner: admission -> detect -> hash -> decode -> metadata -> perceptual hash.
 
 Produces local normalized pages and per-stage status for the orchestrator
 (Packet 4). It performs no persistence, audit, OCR or routing: the
@@ -16,10 +16,13 @@ from .cache import JobDirectory, WorkCache
 from .detect import SignatureMediaTypeDetector, detection_extension
 from .errors import failure, make_error
 from .hashing import ContentHashService
-from .normalize import NORMALIZATION_PROFILE
+from .normalize import NORMALIZATION_PROFILE, check_deadline, check_source_size, page_allocator
 from .registry import default_registry
+from .supervise import supervised_decode
 
-STAGES = ("detect", "hash", "decode", "metadata", "perceptual_hash")
+# Internal substages (not a canonical/API record). Error.stage uses the contract enum:
+# admission -> request, perceptual_hash -> hash.
+STAGES = ("admission", "detect", "hash", "decode", "metadata", "perceptual_hash")
 
 
 def new_asset_id() -> str:
@@ -104,11 +107,20 @@ class FoundationResult:
 
 
 class IngestionFoundation:
-    def __init__(self, cache: WorkCache, *, detector=None, registry=None, hasher=None):
+    """Runs Packet 1 stages for one admitted source.
+
+    `registry` carries the metadata policy (e.g. allow_gps) as immutable decoder
+    configuration: build one per workspace policy rather than mutating a shared one.
+    `supervised=True` decodes in a child process killed at the deadline.
+    """
+
+    def __init__(self, cache: WorkCache, *, detector=None, registry=None, hasher=None,
+                 supervised: bool = True):
         self.cache = cache
         self.detector = detector or SignatureMediaTypeDetector()
         self.registry = registry or default_registry()
         self.hasher = hasher or ContentHashService()
+        self.supervised = supervised
 
     def prepare(self, source: Path, filename_hint: str | None, limits: contract.Limits,
                 asset_id: str | None = None) -> FoundationResult:
@@ -116,22 +128,35 @@ class IngestionFoundation:
         result = FoundationResult(asset_id=asset_id or new_asset_id())
         job = self.cache.new_job()
         result.job = job
-        current = "detect"
+        current = "admission"
+        allocator_token = page_allocator.set(self.cache.allocate)
         try:
             with job.reader():
+                # Admission limits come before any full-file work.
+                check_deadline(limits, "request")
+                check_source_size(source, limits, "request")
+                self._done(result, "admission")
+
+                current = "detect"
                 with open(source, "rb") as stream:
                     result.detected_mime_type = self.detector.detect(stream, filename_hint or "")
                 self._done(result, "detect")
 
                 current = "hash"
+                check_deadline(limits, "hash")
                 result.original_sha256 = self.hasher.sha256(source)  # before any decoding
                 result.original_byte_size = source.stat().st_size
+                check_deadline(limits, "hash")
                 self._done(result, "hash")
 
                 current = "decode"
                 self.cache.ensure_capacity(result.original_byte_size)
                 decoder = self.registry.resolve(result.detected_mime_type)
-                decoded = decoder.decode(source, result.detected_mime_type, job.output_dir, limits)
+                if self.supervised:
+                    decoded = supervised_decode(decoder, source, result.detected_mime_type,
+                                                job.output_dir, limits, self.cache)
+                else:
+                    decoded = decoder.decode(source, result.detected_mime_type, job.output_dir, limits)
                 self._done(result, "decode")
 
                 current = "metadata"  # extracted by the decoder from the original bytes
@@ -142,20 +167,26 @@ class IngestionFoundation:
                 self._done(result, "metadata")
 
                 current = "perceptual_hash"
+                check_deadline(limits, "hash")
                 result.perceptual_hash = self.hasher.perceptual_hash(decoded.pages[0])
+                check_deadline(limits, "hash")
                 self._done(result, "perceptual_hash")
 
                 current = "hash"
                 if self.hasher.sha256(source) != result.original_sha256:
                     raise failure("INTEGRITY_FAILED", "hash", "Original bytes changed during processing")
+                check_deadline(limits, "hash")  # a late result is a failure, not a completion
                 result.status = "completed"
         except contract.PipelineFailure as exc:
-            reported = exc.error["stage"]
-            self._fail(result, reported if reported in STAGES else current, exc.error)
+            # Metadata is extracted inside the decoder, so attribute it precisely.
+            metadata = current == "decode" and exc.error["stage"] == "metadata"
+            self._fail(result, "metadata" if metadata else current, exc.error)
         except Exception as exc:
-            stage = "hash" if current == "perceptual_hash" else current
+            stage = {"admission": "request", "perceptual_hash": "hash"}.get(current, current)
             self._fail(result, current, make_error(
                 "INTERNAL_ERROR", stage, "Unexpected failure", details=[("stage", type(exc).__name__)]))
+        finally:
+            page_allocator.reset(allocator_token)
         return result
 
     @staticmethod

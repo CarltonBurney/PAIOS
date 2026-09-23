@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pypdfium2 as pdfium
+import pypdfium2.raw as pdfium_raw
 
 from ..errors import failure
 from ..normalize import check_deadline, pdf_pixel_size, to_srgb_rgb, write_page
@@ -26,6 +27,10 @@ class PdfDecoder(BaseDecoder):
                           details=[("source", f"pdfium error {getattr(exc, 'err_code', 'unknown')}")]
                           ) from None
         try:
+            # Any security handler means encrypted, including owner-password-only files
+            # that open without a password. v1 rejects all of them.
+            if pdfium_raw.FPDF_GetSecurityHandlerRevision(document.raw) != -1:
+                raise failure("ENCRYPTED_MEDIA", "decode", "Encrypted PDFs are not supported")
             dpi = limits.pdf_dpi
             count = len(document)
             budget.check_page_count(count)

@@ -7,10 +7,32 @@ Return packet for ChatGPT review, in the format set out in [`handoff/START-HERE.
 | Packet | 1: detection, decoding, normalization, hashing, metadata |
 | Contract release | 1.0.0 (`contracts/image-ingestion`, delivered in commit `1a9d133`) |
 | Implementation commit | The commit that adds this file on branch `claude/modest-hawking-qx0faa` (PR #6) |
-| Result | 109 unit tests pass. The contract validator passes 104 checks. |
+| Result | Resubmission: 136 unit tests pass locally. The contract validator passes 104 checks. CI runs on Ubuntu and Windows. (First submission: 109 tests.) |
 | Configured adapters | None. Packet 1 has no cloud adapters. |
 | Mocked adapters | The OneDrive `StorageRef`s in `tests/test_foundation.py` are mocks labelled `mock-root`/`mock-item-*`. They are used only to show that `NormalizedMedia` assembly validates against the schema. |
 | Canonical/working-storage receipts | None. Nothing was written to Obsidian, DGE or OneDrive. |
+
+## Resubmission after review round 1
+
+This resubmission answers [PACKET-1-REVIEW.md](PACKET-1-REVIEW.md) (review of `f0af84f`). The implementation commit is the one that adds this section. The suite now has **136 tests** (up from 109); CI runs them on **Ubuntu and Windows**.
+
+| Finding | Fix | Regression tests |
+|---|---|---|
+| **R1** Windows liveness | `os.kill` removed. Each reader now holds an exclusive OS lock on its own marker file (`flock` on POSIX, `msvcrt.locking` on Windows, in `_locks.py`). A marker whose lock can be taken belongs to a reader that has exited. Lock ownership can't be confused by PID reuse, and checking it never signals a process. | `test_liveness_never_signals_processes` (with `os.kill` patched to fail); `test_reader_in_another_process_protects_until_it_exits` (the child reader stays alive while checked and protects the job until it is killed); a Windows CI job |
+| **R2** Budget ignored output | `WorkCache.allocate(n)` holds a cache-wide lock while the bytes are checked **and written**. Every normalized page write reserves its exact encoded size through it (`normalize.page_allocator`), including in the supervised decoder process. Over budget: `LIMIT_EXCEEDED`, stage `storage`, retryable; partial pages removed. | `test_cache_budget_applies_to_decoded_output` (the review's case: a small noisy JPEG under a 25 KB cap); `test_budget_enforced_across_pages_of_one_source`; `test_concurrent_allocations_respect_budget` (8 threads) |
+| **R3** Reader/delete race | A per-job gate lock serializes reader registration against deletion. Deletion checks readers and writes a `deleted` tombstone under the gate before `rmtree`. A later reader gets a clean `JobGone`. | `test_reader_arriving_during_deletion_gets_a_clean_refusal` (deletion paused just before `rmtree`, as in the review's probe); `test_reader_first_blocks_mark_persisted_until_release`; `test_concurrent_sweeps_never_delete_an_active_job` |
+| **R4** Limits and deadline | New `admission` substage: deadline and `max_source_bytes` are checked before any full-file work. The deadline is re-checked around hashing, after metadata, around the perceptual hash and after the final re-hash. **Decoding runs in a supervised child process that is killed at the deadline** (`supervise.py`), which bounds one long native decode call. A child that crashes gives `DECODE_FAILED` with its exit code. | `test_admission_limits_checked_before_hashing` (the hasher is never called); `test_metadata_extraction_past_deadline_fails`; `test_slow_single_page_is_stopped_at_the_deadline` (a 60 s decode is killed at about 2 s); `test_timeout_during_final_hash_fails`; `test_decoder_process_crash_is_a_structured_failure` |
+| **R5** HEIF primary image | Still HEIF decodes only the primary image, as page 1. Metadata comes from the primary image too. Animated AVIF is still rejected. | `test_heif_uses_primary_image_only`: a two-image HEIF with the primary at index 1 and then at index 0. Geometry, pixels, metadata (device, orientation) and dHash (`0000…` vs `ffff…`) each follow the declared primary. |
+| **R6** Encrypted PDFs | Any PDF with a security handler (`FPDF_GetSecurityHandlerRevision != -1`) returns `ENCRYPTED_MEDIA` before rendering. That includes owner-password-only PDFs. | `test_owner_password_only_pdf_is_rejected`; the user-password test is kept |
+| **ICC decision** | An explicit profile that can't be read or applied fails with `DECODE_FAILED` at decode. Non-sRGB profiles are converted with LittleCMS. Output PNGs are written from pixels only, so no source ICC or EXIF is carried: output is untagged sRGB by definition of `png-rgb-white-v1`. | `test_non_srgb_profile_is_converted` (synthetic linear-gamma ICC: 128 → 188); `test_png_with_profile_converts_through_decoder`; `test_unreadable_profile_fails_decode`; `test_profile_that_cannot_apply_to_mode_fails`; `test_output_png_carries_no_source_color_or_exif_metadata` (sRGB and non-sRGB inputs, both with EXIF) |
+
+The dispositions on the nine proposals are applied as follows:
+- **Proposal 1 (GPS):** GPS policy is now read-only decoder configuration, and `default_registry(allow_gps=...)` builds one registry per policy; see `test_gps_policy_is_bound_per_registry`.
+- **Proposal 3 (stage attribution):** a perceptual-hash failure is now recorded on its own `perceptual_hash` substage with `Error.stage = hash`. The completed original-hash stage is no longer marked failed; see `test_perceptual_hash_failure_is_attributed_to_its_substage`.
+- **Proposals 5, 6 and 8:** these were approved as already implemented.
+- **Proposal 9:** this is ChatGPT's maintenance patch. I haven't changed the 1.0.0 package.
+
+**Execution-boundary note:** the child process is the cancellation boundary. It bounds wall-clock time. It does not cap memory; the pixel limits still apply before allocation. An OS-level memory cap per child, such as a job object or `RLIMIT_AS`, can be added if you want one.
 
 ## Scope
 
@@ -75,8 +97,8 @@ Sampling uses integer arithmetic, `(2x+1)·W // 18` and `(2y+1)·H // 16`, which
 | RGBA, 50% red | (255,127,127) |
 | LA, palette transparency, CMYK, 16-bit grey, 1-bit | Each normalized to 8-bit RGB with the expected pixel values. |
 | sRGB ICC | Recognized, pixels unchanged. |
-| Unreadable ICC | Reported as `"icc": "unusable"`, and the image is treated as untagged (see proposal 4). |
-| Output PNG | No EXIF or ICC chunks. Hashes are deterministic across repeated runs. |
+| Unreadable or inapplicable ICC | `DECODE_FAILED` at decode (review decision; see resubmission). |
+| Output PNG | Written from pixels only. No ICC or EXIF chunks, tested with sRGB-tagged and non-sRGB-tagged inputs that also carry EXIF. Hashes are deterministic across repeated runs. |
 
 ### Multi-page PDF and TIFF (A10, decode side)
 
@@ -148,7 +170,7 @@ These use the issued test profile: 100 MiB, 200 pages, 50 M pixels per page, 200
 ### Stage runner and identity
 
 - Every asset gets a lowercase UUID v4 `asset_id`. An ID passed in by the caller is kept.
-- The five stages (detect → hash → decode → metadata → perceptual_hash) each report `completed`, `failed` or `skipped`, with a schema-valid Error on the stage that failed.
+- The six substages (admission → detect → hash → decode → metadata → perceptual_hash) each report `completed`, `failed` or `skipped`, with a schema-valid Error on the stage that failed.
 - The original is hashed before decoding and re-hashed afterwards. A change gives `INTEGRITY_FAILED`.
 - The original bytes are confirmed unchanged for all four gate formats (JPEG, PNG, HEIC, PDF).
 - `to_normalized_media` validates against `NormalizedMedia` and rejects a `StorageRef` whose hash doesn't match the page (`INTEGRITY_FAILED`).
@@ -166,12 +188,12 @@ The fixtures are synthetic and are generated when the tests run. The PDF embeds 
 
 ## Known limitations
 
-1. **ICC conversion is only lightly tested.** It is implemented with LittleCMS through `ImageCms`, but only sRGB and unreadable profiles are covered. A real Display P3 or Adobe RGB fixture, such as an iPhone photo, is needed.
+1. **ICC conversion is tested with a synthetic profile only.** A linear-gamma RGB profile checks the conversion maths. A real Display P3 photo from an iPhone still needs checking at the final gate.
 2. **No real camera or scanner files yet.** No real HEIC or real scanned PDFs are included. Those belong to the four-file acceptance gate at Packet 4.
-3. **Deadlines are checked between pages, not inside a single decode.** One very slow page can overrun the deadline by that page's decode time.
-4. **Reader protection only works on one machine.** It relies on PID liveness and is not coordinated across hosts.
+3. **Each decode starts a new process.** That adds roughly 0.3–1 s per asset. A warm worker pool can remove the cost later without changing behaviour.
+4. **Reader protection only works on one machine.** It uses OS file locks on the local cache and is not coordinated across hosts. The cache is local by design.
 
-## Proposed contract changes and questions
+## Proposed contract changes and questions (original submission; resolved in the review)
 
 None of these were changed in the implementation. Each one needs an architecture decision.
 

@@ -114,3 +114,71 @@ def png_header_only(path: Path, width: int, height: int) -> Path:
     body = chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(b"\x00" * 16)) + chunk(b"IEND", b"")
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + body)
     return path
+
+
+def linear_rgb_icc() -> bytes:
+    """Valid ICC v2 matrix/TRC profile: sRGB primaries (D50) with gamma 1.0 curves.
+
+    Not sRGB, so normalization must convert through it: linear 128 -> sRGB ~188.
+    """
+    def s15(v):
+        return struct.pack(">i", round(v * 65536))
+
+    def xyz(x, y, z):
+        return b"XYZ " + b"\0" * 4 + s15(x) + s15(y) + s15(z)
+
+    curve = b"curv" + b"\0" * 4 + struct.pack(">I", 1) + struct.pack(">H", 0x0100) + b"\0\0"
+    text = b"Linear RGB test"
+    desc = (b"desc" + b"\0" * 4 + struct.pack(">I", len(text) + 1) + text + b"\0"
+            + b"\0" * 8 + b"\0" * 3 + b"\0" * 67)
+    tags = [(b"desc", desc), (b"wtpt", xyz(0.9642, 1.0, 0.8249)),
+            (b"rXYZ", xyz(0.4361, 0.2225, 0.0139)), (b"gXYZ", xyz(0.3851, 0.7169, 0.0971)),
+            (b"bXYZ", xyz(0.1431, 0.0606, 0.7141)),
+            (b"rTRC", curve), (b"gTRC", curve), (b"bTRC", curve)]
+    offset = 128 + 4 + 12 * len(tags)
+    table, data = b"", b""
+    for sig, body in tags:
+        while (offset + len(data)) % 4:
+            data += b"\0"
+        table += sig + struct.pack(">II", offset + len(data), len(body))
+        data += body
+    body = struct.pack(">I", len(tags)) + table + data
+    size = 128 + len(body)
+    header = (struct.pack(">I", size) + b"lcms" + bytes([2, 0x10, 0, 0]) + b"mntrRGB XYZ "
+              + b"\0" * 12 + b"acsp" + b"\0" * 24 + struct.pack(">I", 0)
+              + s15(0.9642) + s15(1.0) + s15(0.8249) + b"\0" * 48)
+    assert len(header) == 128
+    return header + body
+
+
+def heif_collection(path: Path, primary: int = 1) -> Path:
+    """Two still images; the one at index `primary` is declared primary.
+
+    Image 0: descending grey ramp, no EXIF (dHash ffff...). Image 1: two-tone with
+    EXIF orientation 6 and device "Primary Camera" (dHash 0000... once rotated).
+    """
+    import pillow_heif
+
+    first = Image.new("RGB", (36, 20))
+    for x in range(36):
+        v = 255 - x * 7
+        first.paste((v, v, v), (x, 0, x + 1, 20))
+    second = two_tone((40, 20))
+    heif = pillow_heif.from_pillow(first)
+    heif.add_from_pillow(second)
+    heif[1].info["exif"] = exif_bytes(6, make="Primary", model="Camera")
+    heif.save(path, quality=95, primary_index=primary)
+    return path
+
+
+def owner_only_encrypted_pdf(path: Path) -> Path:
+    """Encrypted with an empty user password: opens without a password, still encrypted."""
+    from pypdf import PdfReader, PdfWriter
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (100, 100), WHITE).save(buffer, "PDF", resolution=72)
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(buffer.getvalue())))
+    writer.encrypt(user_password="", owner_password="owner")
+    with open(path, "wb") as handle:
+        writer.write(handle)
+    return path
