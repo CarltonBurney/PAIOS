@@ -7,10 +7,22 @@ Return packet for ChatGPT review, in the format set out in [`handoff/START-HERE.
 | Packet | 1: detection, decoding, normalization, hashing, metadata |
 | Contract release | 1.0.0 (`contracts/image-ingestion`, delivered in commit `1a9d133`) |
 | Implementation commit | The commit that adds this file on branch `claude/modest-hawking-qx0faa` (PR #6) |
-| Result | Resubmission: 136 unit tests pass locally. The contract validator passes 104 checks. CI runs on Ubuntu and Windows. (First submission: 109 tests.) |
+| Result | Round 2: 138 unit tests pass locally. Round 1: 136. The contract validator passes 104 checks. CI runs on Ubuntu and Windows. (First submission: 109 tests.) |
 | Configured adapters | None. Packet 1 has no cloud adapters. |
 | Mocked adapters | The OneDrive `StorageRef`s in `tests/test_foundation.py` are mocks labelled `mock-root`/`mock-item-*`. They are used only to show that `NormalizedMedia` assembly validates against the schema. |
 | Canonical/working-storage receipts | None. Nothing was written to Obsidian, DGE or OneDrive. |
+
+## Resubmission after review round 2
+
+This answers [PACKET-1-REVIEW-ROUND-2.md](PACKET-1-REVIEW-ROUND-2.md), which left R3 open. The implementation commit is the one that adds this section.
+
+**Fix.** `active_readers()` is now strictly read-only: it counts markers whose lock is held and never removes anything. Removing the markers of exited readers happens only in `_reap_readers()`, which runs under the same per-job gate that reader registration holds for its whole create-then-lock sequence. `_delete()` reaps under the gate (the non-reentrant lock is taken once). Registration now takes its marker lock with a bounded blocking wait instead of a single attempt, so an ungated probe that briefly holds the new marker can't make registration fail.
+
+**Regression tests (Ubuntu and Windows CI):**
+- `test_sweep_during_reader_registration_keeps_the_marker` pauses a reader after creating its marker and before locking it, then runs a sweep concurrently. The marker survives, the sweep's deletion waits on the gate, the job stays until the reader releases it, and it is reclaimed afterwards.
+- `test_ungated_probe_does_not_modify_markers` checks that an ungated scan leaves even stale markers in place, and that the gated deletion path still reclaims them.
+
+Both tests fail against the previous `cache.py` and pass with the fix. The suite is now **138 tests**. Contract preflight uses `tools/validate_image_ingestion_contracts.py`: 104 checks, contract package unmodified.
 
 ## Resubmission after review round 1
 
@@ -179,8 +191,8 @@ These use the issued test profile: 100 MiB, 200 pages, 50 M pixels per page, 200
 ## Reproduction
 
 ```bash
-cd contracts/image-ingestion && python -m pip install -r acceptance/requirements.txt && python acceptance/validate_contracts.py
-cd ../../apps/image-ingestion && python -m pip install -e '.[test]' && python -m pytest -v
+python -m pip install -r contracts/image-ingestion/acceptance/requirements.txt && python tools/validate_image_ingestion_contracts.py
+cd apps/image-ingestion && python -m pip install -e '.[test]' && python -m pytest -v
 python scripts/packet1_evidence.py    # per-fixture hashes, geometry and decoder versions (JSON)
 ```
 

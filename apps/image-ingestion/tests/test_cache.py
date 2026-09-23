@@ -241,3 +241,60 @@ def test_reader_first_blocks_mark_persisted_until_release(tmp_path):
         t.join()
         assert results == [False] and (job.output_dir / "page-000001.png").exists()
     assert not job.path.exists()
+
+
+def test_sweep_during_reader_registration_keeps_the_marker(tmp_path, monkeypatch):
+    """Review round 2 (R3): marker created, lock not yet taken, sweep runs meanwhile."""
+    import paios_ingestion.cache as cache_module
+    cache = WorkCache(tmp_path / "c", ttl_seconds=0)
+    job = cache.new_job()
+    fill(job, 10)
+    job.mark_failed()  # eligible for deletion as soon as no reader holds it
+    paused, resume, entered, release = (threading.Event() for _ in range(4))
+    real_lock = cache_module.lock
+
+    def lock_with_pause(handle, *args, **kwargs):
+        if threading.current_thread().name == "reader" and ".readers" in str(handle.name):
+            paused.set()
+            resume.wait(10)
+        return real_lock(handle, *args, **kwargs)
+
+    monkeypatch.setattr(cache_module, "lock", lock_with_pause)
+
+    def read():
+        with job.reader():
+            entered.set()
+            release.wait(10)
+
+    reader = threading.Thread(target=read, name="reader")
+    reader.start()
+    assert paused.wait(10)
+    markers = list((job.path / ".readers").iterdir())
+    assert len(markers) == 1
+
+    sweeper = threading.Thread(target=lambda: cache.sweep(now=time.time() + 10), name="sweeper")
+    sweeper.start()
+    sweeper.join(0.5)  # the ungated scan has run; deletion now waits on the gate
+    assert markers[0].exists(), "an unlocked marker of a registering reader was removed"
+    assert job.path.exists()
+
+    resume.set()
+    assert entered.wait(10)
+    sweeper.join(10)
+    assert not sweeper.is_alive()
+    assert job.path.exists() and markers[0].exists()  # registered reader protected the job
+    assert (job.output_dir / "page-000001.png").exists()
+
+    release.set()
+    reader.join(10)
+    assert cache.sweep(now=time.time() + 10).deleted == [job.job_id]  # dead reader reclaimable
+
+
+def test_ungated_probe_does_not_modify_markers(tmp_path):
+    cache = WorkCache(tmp_path / "c")
+    job = cache.new_job()
+    stale = job.path / ".readers" / "stale"
+    stale.touch()
+    assert job.active_readers() == 0
+    assert stale.exists()  # only the gated reap removes stale markers
+    assert job.mark_persisted() is True

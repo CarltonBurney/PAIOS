@@ -110,7 +110,20 @@ class JobDirectory:
         raise TimeoutError("job state file stayed locked")
 
     def active_readers(self) -> int:
-        """Count markers whose lock is held. Unlocked markers belong to exited readers."""
+        """Count markers whose lock is currently held. Never modifies the directory.
+
+        Safe without the gate: a marker created but not yet locked by a registering
+        reader is simply not counted here, and is not removed. Removal of stale
+        markers happens only in _reap_readers(), under the gate that registration
+        also holds, so a half-registered reader can never be mistaken for a dead one.
+        """
+        return self._scan(reap=False)
+
+    def _reap_readers(self) -> int:
+        """Gate must be held. Remove markers of exited readers; return the live count."""
+        return self._scan(reap=True)
+
+    def _scan(self, *, reap: bool) -> int:
         active = 0
         for marker in (self.path / _READERS).glob("*"):
             try:
@@ -118,15 +131,15 @@ class JobDirectory:
             except FileNotFoundError:
                 continue
             with handle:
-                if try_lock(handle):
-                    unlock(handle)
-                    handle.close()
-                    try:
-                        marker.unlink(missing_ok=True)  # stale marker
-                    except PermissionError:
-                        pass  # Windows: still open elsewhere; retried on the next check
-                else:
+                if not try_lock(handle):
                     active += 1
+                    continue
+                unlock(handle)
+            if reap:
+                try:
+                    marker.unlink(missing_ok=True)  # stale: its reader has exited
+                except PermissionError:
+                    pass  # Windows: still open elsewhere; retried on the next check
         return active
 
     @contextmanager
@@ -138,9 +151,13 @@ class JobDirectory:
                 raise JobGone(self.job_id)
             marker_path = self.path / _READERS / uuid.uuid4().hex
             marker = open(marker_path, "xb")
-            if not try_lock(marker):  # new file: cannot be held elsewhere
+            try:
+                # Blocking: an ungated active_readers() probe may hold it for an instant.
+                lock(marker)
+            except BaseException:
                 marker.close()
-                raise RuntimeError("could not lock a new reader marker")
+                marker_path.unlink(missing_ok=True)
+                raise
         try:
             yield self
         finally:
@@ -191,7 +208,7 @@ class WorkCache:
             raise ValueError("refusing to delete outside the cache root")
         try:
             with _locked(job.path / _GATE):
-                if job.active_readers():
+                if job._reap_readers():
                     return False
                 job._write_state(deleted=True)  # later readers see this under the gate
         except JobGone:
