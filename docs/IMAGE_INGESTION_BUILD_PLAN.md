@@ -178,13 +178,20 @@ Each file must produce:
 - An OCR result
 - A retrievable API record
 
-## Contract Inputs Claude Needs Before Building
+## Contract Package and Status
 
-Under the operating rule, Claude builds against contracts owned by ChatGPT. These inputs should be issued before each packet starts. Where one is missing, Claude proposes a draft for approval rather than inventing the interface.
+ChatGPT issued the contract package at [`contracts/image-ingestion`](../contracts/image-ingestion) (release 1.0.0). Claude builds against it and does not edit it.
 
-| Packet | Required contract inputs |
-|---|---|
-| 1 | `asset_id` format and generation rule. Stage status/error schema. Metadata schema. Normalization target (format, color space, max dimensions, PDF page handling). Perceptual hash algorithm and parameters. Decoder registry interface. Local temp/cache rules. OneDrive routing rules for originals and working copies. |
-| 2 | Asset Registry schema. Audit Log event schema and event types. Master Image Index schema. Persistence technology. Duplicate-handling policy (reject, link or re-register). Transaction boundaries. |
-| 3 | `OCRProvider` interface. OCR result schema, including regions and bounding boxes. Choice of first provider. OCR error taxonomy. |
-| 4 | Request and response contracts for `POST /images/ingest` and `GET /images/{asset_id}`. API error model. Behavior on partial failure. Search foundation contract. |
+| Packet | Contract inputs | Status |
+|---|---|---|
+| 1 | [Packet 1 issued contract](../contracts/image-ingestion/handoff/PACKET-1-ISSUED-CONTRACT.md): `Metadata`, `Error` and `NormalizedMedia` schemas, `interfaces/contracts.py` | Implemented in [`apps/image-ingestion`](../apps/image-ingestion). Submitted for review in [PACKET-1-RETURN.md](../apps/image-ingestion/PACKET-1-RETURN.md). |
+| 2 | `RegistryEntry`, `AuditEvent`, `MasterIndexEntry` and `CommitBundle` schemas; `docs/storage-and-consistency.md`; `docs/persistence-model.md` | Not started. Needs a coordinator/database technology proposal first. |
+| 3 | `OCRResult`, `OCRPage` and `OCRBlock` schemas; the `OCRProvider` protocol | Not started. Needs a provider profile proposal first. |
+| 4 | `api/openapi.json`, `docs/api-behavior.md`, [acceptance matrix](../contracts/image-ingestion/acceptance/acceptance.md) | Not started |
+
+The contract package supersedes two parts of this plan:
+
+- **Record writes.** The separate Registry, Audit and Index writes listed in Packet 4 are replaced by one logical, atomic `CommitBundle` publication, which is accepted durably before any processing starts.
+- **OCR events.** `ocr_completed` and `ocr_failed` map to the terminal `ingestion_completed`, `ingestion_partial` and `ingestion_failed` events.
+
+See [PLAN-RECONCILIATION.md](../contracts/image-ingestion/handoff/PLAN-RECONCILIATION.md).

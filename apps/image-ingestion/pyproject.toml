@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paios-ingestion"
+version = "0.1.0"
+description = "PAIOS image ingestion pipeline (Packet 1: pre-OCR foundation)"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=12,<13",
+    "pillow-heif>=1.1,<2",
+    "pypdfium2>=5,<6",
+    "jsonschema>=4.18,<5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pypdf>=5", "cryptography>=42"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
