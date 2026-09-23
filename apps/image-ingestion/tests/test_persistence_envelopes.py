@@ -144,3 +144,14 @@ def test_publisher_refuses_any_adapter_that_is_not_a_test_adapter():
     with pytest.raises(RuntimeError, match="no live Drive writer"):
         Publisher(object(), LiveLooking())
     Publisher(object(), FakeDrive())  # the fixture adapter is accepted
+
+
+def test_records_are_never_uploaded_through_a_resumable_session():
+    from paios_ingestion.persistence.publisher import MULTIPART_LIMIT_BYTES
+    drive = FakeDrive()
+    (file_id,) = drive.generate_ids(1)
+    with pytest.raises(contract.PipelineFailure) as excinfo:
+        Publisher(object(), drive)._put(file_id, "registry.json", b"x" * (MULTIPART_LIMIT_BYTES + 1),
+                                        parent="p", props={})
+    assert error_of(excinfo)["code"] == "CONTRACT_MISMATCH"
+    assert drive.calls == []  # refused before any request

@@ -29,6 +29,10 @@ from .envelopes import OBJECT_ROLES, PAYLOAD_ROLES
 from .fakes import ConflictError, NotFoundError, TransientError
 from .repository import CoordinatorRepository
 
+# Records are single-request multipart creates only; no resumable session exists
+# that could outlive a revoked credential (R2 revision section 2.2).
+MULTIPART_LIMIT_BYTES = 5 * 1024 * 1024
+
 _ROLE_PROPERTY = {"intent.json": "intent", "registry.json": "payload", "audit.json": "payload",
                   "index.json": "payload", "commit.json": "commit"}
 
@@ -52,6 +56,9 @@ class Publisher:
         self.fault = fault or (lambda point: None)
 
     def _put(self, object_id: str, name: str, data: bytes, *, parent: str, props: dict) -> None:
+        if len(data) > MULTIPART_LIMIT_BYTES:
+            raise failure("CONTRACT_MISMATCH", "commit", "Record too large for a single-request upload",
+                          details=[(name, f"{len(data)} bytes; resumable uploads are not used for records")])
         expected = sha256_hex(data)
         for attempt in range(self.retries):
             try:

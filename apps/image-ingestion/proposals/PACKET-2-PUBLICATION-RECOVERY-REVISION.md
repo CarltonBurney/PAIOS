@@ -2,6 +2,8 @@
 
 **Status:** proposal for focused review. It is the second unit requested in [PACKET-2-ARCHITECTURE-DECISION.md](PACKET-2-ARCHITECTURE-DECISION.md). Nothing here is implemented as a live publisher or cloud writer, and nothing here changes the contract.
 
+> **Review outcome (PACKET-2-REVIEW-ROUND-1.md):** R1, R3 and R5 approved. **R2 and R4 were not approved as written; their replacement is [PACKET-2-R2-R4-REVISION.md](PACKET-2-R2-R4-REVISION.md).** The P2-B procedure and the P2-E guarantee below are superseded by that document.
+
 **Replaces:** sections 4–6 of [PACKET-2-STORAGE-PROPOSAL.md](PACKET-2-STORAGE-PROPOSAL.md), for P2-A to P2-E. The database side already exists as unit 1 ([PACKET-2-UNIT-1-RETURN.md](../PACKET-2-UNIT-1-RETURN.md)); this document says how the publisher would use it.
 
 ## Guarantees claimed, and their limits
