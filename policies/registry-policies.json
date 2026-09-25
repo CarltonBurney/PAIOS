@@ -1,0 +1,138 @@
+{
+  "policySetName": "PAIOS Registry Governance Policies v1.0",
+  "description": "Governs registry lifecycle mutations (§3B). Registry changes are policy requests, not merely audited events: the Registry Service performs a state transition only after an allowing decision. Uses the same decision enum and precedence as execution policy - deny > require_approval > allow_with_controls > allow. Separation of duties is enforced after policy: where approval is required, requester and approver must differ.",
+  "policies": [
+    {
+      "policy_id": "REG-ELEVATED-001",
+      "enabled": true,
+      "priority": 300,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["promote"],
+        "target_environment_any_of": ["prod"],
+        "risk_level_any_of": ["L4"],
+        "principal_roles_none_of": ["registry_admin", "platform_admin", "security_admin"]
+      },
+      "effects": {
+        "decision": "deny",
+        "audit_level": "full",
+        "reason_code": "HIGH_RISK_PROMOTION_ELEVATED_ROLE_REQUIRED"
+      }
+    },
+    {
+      "policy_id": "REG-ELEVATED-002",
+      "enabled": true,
+      "priority": 300,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["retire"],
+        "resource_environments_any_of": ["prod"],
+        "principal_roles_none_of": ["registry_admin", "platform_admin"]
+      },
+      "effects": {
+        "decision": "deny",
+        "audit_level": "full",
+        "reason_code": "PRODUCTION_RETIREMENT_ELEVATED_ROLE_REQUIRED"
+      }
+    },
+    {
+      "policy_id": "REG-PROMOTE-PROD-001",
+      "enabled": true,
+      "priority": 200,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["promote"],
+        "target_environment_any_of": ["prod"]
+      },
+      "effects": {
+        "decision": "require_approval",
+        "audit_level": "full",
+        "reason_code": "PRODUCTION_PROMOTION_APPROVAL"
+      }
+    },
+    {
+      "policy_id": "REG-OWNERSHIP-001",
+      "enabled": true,
+      "priority": 200,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["transfer_ownership"]
+      },
+      "effects": {
+        "decision": "require_approval",
+        "audit_level": "full",
+        "reason_code": "OWNERSHIP_TRANSFER_APPROVAL"
+      }
+    },
+    {
+      "policy_id": "REG-RETIRE-PROD-001",
+      "enabled": true,
+      "priority": 190,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["retire"],
+        "resource_environments_any_of": ["prod"]
+      },
+      "effects": {
+        "decision": "require_approval",
+        "audit_level": "full",
+        "reason_code": "PRODUCTION_RETIREMENT_APPROVAL"
+      }
+    },
+    {
+      "policy_id": "REG-CAPABILITY-001",
+      "enabled": true,
+      "priority": 180,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["create_version"],
+        "risk_level_any_of": ["L4"]
+      },
+      "effects": {
+        "decision": "require_approval",
+        "audit_level": "full",
+        "reason_code": "HIGH_RISK_CAPABILITY_CHANGE_APPROVAL"
+      }
+    },
+    {
+      "policy_id": "REG-SUSPEND-001",
+      "enabled": true,
+      "priority": 150,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["suspend"]
+      },
+      "effects": {
+        "decision": "allow_with_controls",
+        "audit_level": "full",
+        "reason_code": "EMERGENCY_SUSPENSION"
+      }
+    },
+    {
+      "policy_id": "REG-RESUME-001",
+      "enabled": true,
+      "priority": 150,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {
+        "registry_operation_any_of": ["resume"],
+        "principal_roles_none_of": ["registry_admin", "platform_admin"]
+      },
+      "effects": {
+        "decision": "require_approval",
+        "audit_level": "full",
+        "reason_code": "RESUME_AFTER_SUSPENSION_APPROVAL"
+      }
+    },
+    {
+      "policy_id": "REG-BASE-001",
+      "enabled": true,
+      "priority": 0,
+      "scope": { "departments": ["*"], "agents": ["*"], "environments": ["*"] },
+      "conditions": {},
+      "effects": {
+        "decision": "allow",
+        "audit_level": "standard"
+      }
+    }
+  ]
+}

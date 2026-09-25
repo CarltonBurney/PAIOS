@@ -12,12 +12,15 @@ The framework is model-agnostic. The underlying model can change while the contr
 
 Every AI action should be:
 
-1. Classified
-2. Routed
-3. Governed
-4. Logged
-5. Reusable when appropriate
-6. Escalated to a human when the risk level requires it
+1. Authorized against the caller's identity
+2. Classified
+3. Risk-assessed on impact and concern domain
+4. Governed by declarative policy
+5. Routed
+6. Enforced at the execution boundary
+7. Logged with a correlation ID
+8. Reusable when appropriate
+9. Escalated to a human when policy requires it
 
 ## The Enterprise Problem
 
@@ -54,26 +57,97 @@ The control plane is designed around:
 ## Control Plane Flow
 
 ```text
-Request
+Authentication
   ↓
-Identity / Context Review
+Identity Resolution
   ↓
-Request Classification
+Authorization
   ↓
-Risk Level Assignment
+Classification
   ↓
-Routing Decision
+Risk Assessment
   ↓
-Human Approval When Required
+Policy Evaluation
   ↓
-Model / Agent Execution
+Approval Gate
   ↓
-Output Review
+Tool / Workflow Execution
   ↓
-Audit / Documentation
+Output Validation
   ↓
-Knowledge Capture
+Audit
 ```
+
+Authorization runs before classification because it is identity-only: it asks
+whether this identity may attempt this class of operation at all, and does not
+need to know what the request turns out to be. Contextual refusal happens later,
+in policy evaluation.
+
+## Risk Model
+
+Risk is assessed on two independent axes:
+
+```json
+{ "risk_level": "L3", "risk_domains": ["security", "compliance"] }
+```
+
+- **`risk_level`** — ordered impact severity, `L0` through `L4`. How much
+  damage could this do. Exactly one per request.
+- **`risk_domains`** — non-exclusive kinds of concern: `security`,
+  `compliance`, `privacy`, `financial`, `operational`, `governance`. What kind
+  of concern is this. Zero or more per request.
+
+> **Migration note.** Previous PAIOS revisions represented Low, Standard,
+> Sensitive, Compliance, and Security within a single taxonomy. PAIOS now
+> separates impact severity (L0–L4) from non-exclusive risk domains.
+
+Risk levels and domains are defined in `policies/risk-model.json`. Detectors
+escalate but never de-escalate.
+
+**Risk never authorizes execution.** A request being `L0` or `L1` does not make
+a tool permissible. Risk, identity and authorization, policy, tool
+registration, and approval are separate inputs to the final execution decision.
+
+## Governance Layers
+
+| Layer | Question it answers |
+|-------|--------------------|
+| **Authorization** | Is this identity entitled to attempt this class of operation? |
+| **Policy** | May this specific, otherwise-authorized request proceed under current governance conditions? |
+| **Tool Registry** | Does this resource exist, what does its contract require, and is it operationally available? |
+| **Execution Gateway** | May this principal invoke this tool, right now, with these arguments? |
+
+Each layer is independently sufficient to refuse and none can be skipped. A
+policy decision is advisory until the Execution Gateway re-validates it — the
+gateway does not trust that a caller consulted policy first.
+
+### Governed registries
+
+Agent, Model, Tool, and Workflow registries share one lifecycle substrate while
+keeping resource-specific schemas, composed as
+`GovernedResourceMetadata + <Resource>Spec`. Resources move through `draft` →
+`active` → `deprecated` → `retired`, with `suspended` as a reversible emergency
+control. Versions are immutable: a governance-relevant change creates a new
+version rather than mutating the active definition, so historical audit can
+always resolve exactly what ran.
+
+**Registry activation is not authorization.** An `active` resource is
+operationally available; whether *this* principal may use it is decided by
+identity, authorization, policy, and context. The same principle as the risk
+rule above.
+
+Policy decisions resolve by precedence:
+
+```
+deny  >  require_approval  >  allow_with_controls  >  allow
+```
+
+Any applicable `deny` wins. Approval can never override a deny.
+
+An `L4` operation denied on the normal control plane is denied — that is what
+the tier is for. Emergency access is a separate break-glass mechanism with its
+own authorization, policy, audit, and time limits, never an exception carved
+into `deny`.
 
 ## Enterprise Value
 
