@@ -1,3 +1,4 @@
+using Paios.CommandCenter.Governance;
 using Paios.CommandCenter.Operations;
 using Paios.CommandCenter.Providers;
 
@@ -13,6 +14,7 @@ namespace Paios.CommandCenter.Dashboard;
 public sealed class DashboardAggregator(
     ProviderRegistry providers,
     OperationsRegistry operations,
+    GovernanceClient governance,
     ILogger<DashboardAggregator> logger)
 {
     public async Task<DashboardSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
@@ -21,15 +23,17 @@ public sealed class DashboardAggregator(
         // must not prevent the others from reporting.
         var modelsTask = BuildModelsAsync(cancellationToken);
         var operationsTask = BuildOperationsAsync(cancellationToken);
+        var governanceTask = BuildGovernanceAsync(cancellationToken);
 
-        await Task.WhenAll(modelsTask, operationsTask);
+        await Task.WhenAll(modelsTask, operationsTask, governanceTask);
 
         var (models, modelAlerts) = modelsTask.Result;
         var (ops, opsAlerts) = operationsTask.Result;
+        var (gov, govAlerts) = governanceTask.Result;
         var agents = BuildAgents();
 
-        var subsystems = new List<SubsystemSummary> { models, agents, ops };
-        var alerts = modelAlerts.Concat(opsAlerts)
+        var subsystems = new List<SubsystemSummary> { models, gov, agents, ops };
+        var alerts = modelAlerts.Concat(govAlerts).Concat(opsAlerts)
             .OrderBy(a => a.Severity)
             .ThenBy(a => a.SubsystemId)
             .ToList();
@@ -164,6 +168,120 @@ public sealed class DashboardAggregator(
     }
 
     /// <summary>
+    /// The governance control plane, read over HTTP.
+    ///
+    /// Unlike Agent Lab this subsystem *is* implemented, so an unreachable kernel
+    /// is <c>unavailable</c> rather than <c>not_implemented</c>. That is the
+    /// availability-versus-health separation doing its job: "built but down" and
+    /// "not built" are different facts and stay different here.
+    /// </summary>
+    private async Task<(SubsystemSummary, List<DashboardAlert>)> BuildGovernanceAsync(
+        CancellationToken cancellationToken)
+    {
+        const string subsystemId = "governance";
+        const string source = "/api/governance/status";
+        var alerts = new List<DashboardAlert>();
+
+        try
+        {
+            if (!await governance.IsEnabledAsync(cancellationToken))
+            {
+                // Switched off deliberately. Not implemented is the honest label:
+                // there is nothing to measure, and nothing is broken.
+                return (new SubsystemSummary
+                {
+                    SubsystemId = subsystemId,
+                    DisplayName = "Governance",
+                    Workspace = "governance",
+                    Source = "none — disabled in config/governance.json",
+                    Availability = SubsystemAvailability.NotImplemented,
+                    Status = HealthState.Unknown,
+                    Metrics = Array.Empty<SubsystemMetric>(),
+                    Detail = "The control plane is disabled in config/governance.json."
+                }, alerts);
+            }
+
+            var health = await governance.GetHealthAsync(cancellationToken);
+            var endpoint = await governance.GetEndpointAsync(cancellationToken);
+
+            if (health.Status != HealthState.Healthy)
+            {
+                alerts.Add(new DashboardAlert(
+                    health.Status == HealthState.Unavailable ? AlertSeverity.Critical : AlertSeverity.Warning,
+                    subsystemId,
+                    GovernanceHealthCheck.Id,
+                    $"Governance control plane is {Describe(health.Status)}"
+                        + (health.ErrorMessage is null ? "." : $": {health.ErrorMessage}")));
+            }
+
+            // Status is only read when the kernel is answering. An unreachable
+            // kernel yields no metrics at all rather than zeros.
+            var status = health.Status == HealthState.Unavailable
+                ? GovernanceResult<GovernanceStatus>.Unavailable(health.ErrorMessage ?? "unreachable")
+                : await governance.GetStatusAsync(cancellationToken);
+
+            if (status.Status == HealthState.Degraded && status.ErrorMessage is not null
+                && health.Status == HealthState.Healthy)
+            {
+                // Health is fine but the authenticated read is not — almost always
+                // a credential problem, and worth its own alert because the fix is
+                // different.
+                alerts.Add(new DashboardAlert(AlertSeverity.Warning, subsystemId, source, status.ErrorMessage));
+            }
+
+            var metrics = new List<SubsystemMetric>();
+            if (status.Value is { } s)
+            {
+                if (s.Policies is { } policies)
+                {
+                    metrics.Add(new SubsystemMetric("policies", $"{policies.Enabled}/{policies.Total} enabled"));
+                }
+
+                // Null means the kernel has no registry attached; it is not zero.
+                if (s.Tools is { Registered: { } registered })
+                {
+                    metrics.Add(new SubsystemMetric(
+                        "tools", s.Tools.Enabled is { } enabled
+                            ? $"{enabled}/{registered} enabled"
+                            : registered.ToString()));
+                }
+
+                if (s.RiskModel is { } risk)
+                {
+                    metrics.Add(new SubsystemMetric("risk levels", risk.Levels.ToString()));
+                }
+            }
+
+            // The worse of the two reads wins: a healthy self-check plus a refused
+            // authenticated read is not a healthy subsystem.
+            var overall = Rollup([health.Status, status.Status]);
+
+            return (new SubsystemSummary
+            {
+                SubsystemId = subsystemId,
+                DisplayName = "Governance",
+                Workspace = "governance",
+                Source = source,
+                Availability = SubsystemAvailability.Implemented,
+                Status = overall,
+                Metrics = metrics,
+                Detail = overall == HealthState.Healthy
+                    ? null
+                    : health.ErrorMessage ?? status.ErrorMessage
+                        ?? $"The control plane at {endpoint} is {Describe(overall)}."
+            }, alerts);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Governance subsystem could not be read.");
+            alerts.Add(new DashboardAlert(AlertSeverity.Critical, subsystemId, "aggregator",
+                $"Could not read the governance subsystem: {ex.Message}"));
+
+            return (Unreadable(subsystemId, "Governance", "governance", source, ex), alerts);
+        }
+    }
+
+    /// <summary>
     /// The agent layer has no implementation to read. It is reported as
     /// explicitly not implemented with <c>unknown</c> health and no metrics —
     /// never a fabricated agent count, and never a health state implying it was
@@ -178,8 +296,9 @@ public sealed class DashboardAggregator(
         Availability = SubsystemAvailability.NotImplemented,
         Status = HealthState.Unknown,
         Metrics = Array.Empty<SubsystemMetric>(),
-        Detail = "No agent registry or execution path exists in this repository. "
-               + "Phase 2 is blocked pending resolution of the governance implementation location."
+        Detail = "No agent registry or execution path exists. The governance kernel "
+               + "provides the Tool Registry and Execution Gateway an agent layer "
+               + "would run under, but no agent registry is built on them yet."
     };
 
     private static SubsystemSummary Unreadable(

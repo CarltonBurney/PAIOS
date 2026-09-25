@@ -12,6 +12,14 @@ public enum ServiceCategory
 {
     Application,
     Provider,
+
+    /// <summary>
+    /// The governance control plane. Its own category rather than
+    /// <see cref="Infrastructure"/>: it is not a dependency the app happens to
+    /// reach, it is the layer deciding what the app may do, and an operator
+    /// reading Operations should see that separation.
+    /// </summary>
+    Governance,
     Infrastructure
 }
 

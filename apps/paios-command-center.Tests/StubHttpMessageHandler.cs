@@ -12,6 +12,13 @@ internal sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpRespon
 {
     public List<HttpRequestMessage> Requests { get; } = new();
 
+    /// <summary>
+    /// Request bodies, captured at send time. A caller that disposes its request
+    /// after sending — as it should — leaves the content unreadable afterwards, so
+    /// asserting on what was sent requires reading it here.
+    /// </summary>
+    public List<string> Bodies { get; } = new();
+
     public static StubHttpMessageHandler Returning(HttpStatusCode status, string body, string contentType = "application/json")
         => new(_ => new HttpResponseMessage(status)
         {
@@ -21,9 +28,14 @@ internal sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpRespon
     public static StubHttpMessageHandler Throwing(Exception exception)
         => new(_ => throw exception);
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
     {
         Requests.Add(request);
-        return Task.FromResult(responder(request));
+        Bodies.Add(request.Content is null
+            ? string.Empty
+            : await request.Content.ReadAsStringAsync(cancellationToken));
+
+        return responder(request);
     }
 }

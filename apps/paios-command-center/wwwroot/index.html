@@ -47,15 +47,16 @@
   </style>
 </head>
 <body>
-  <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
+  <aside><div class="brand">PAIOS<span>.</span></div><div><p class="eyebrow">Workspaces</p><nav aria-label="Workspaces"><button class="active" data-workspace="dashboard">Command Center</button><button data-workspace="llm">Local LLMs</button><button data-workspace="governance">Governance</button><button data-workspace="agents">Agent Lab</button><button data-workspace="ops">Operations</button></nav></div></aside>
   <main><header><h1 id="page-title">One place<br><em>to think.</em></h1><div class="status"><i></i>Local container / ready</div></header>
     <section class="workspace active" id="workspace-dashboard"><p>Live roll-up of every subsystem. Each figure is read from the subsystem that owns it &mdash; the dashboard keeps no copy of its own. Select a card to open that workspace.</p><div id="dash-summary"></div><div id="dash-content"><div class="empty">Loading subsystems&hellip;</div></div><div id="dash-alerts"></div></section>
     <section class="workspace" id="workspace-llm"><p>Local model providers are detected and health-checked by the backend. Everything below is live state from <code>/api/providers</code> — nothing on this panel is sample data.</p><div id="llm-content"><div class="empty">Loading providers&hellip;</div></div></section>
+    <section class="workspace" id="workspace-governance"><p>The governance control plane is a separate process reached over HTTP. Everything below is live state from <code>/api/governance/health</code> and <code>/api/governance/status</code> &mdash; when the kernel is not running this panel says so rather than showing a green light.</p><div id="gov-summary"></div><div id="gov-content"><div class="empty">Loading control plane&hellip;</div></div><div id="gov-tools"></div></section>
     <section class="workspace" id="workspace-agents"><p>Bring the reusable agent templates into one test bench. Each agent can become a tab with a shared event and audit contract.</p><div class="empty">NOT IMPLEMENTED &mdash; no agent registry exists yet. This workspace will stay empty rather than display placeholder agents. See docs/phase0/CURRENT_STATE_MATRIX.md.</div></section>
     <section class="workspace" id="workspace-ops"><p>Live health for every component that can actually be checked. Services declared in <code>config/services.json</code> but without an implemented probe report <em>unknown</em> &mdash; nothing here is a static green light.</p><div id="ops-summary"></div><div id="ops-content"><div class="empty">Loading service health&hellip;</div></div></section>
   </main>
   <script>
-    const titles = { dashboard:'One place<br><em>to think.</em>', llm:'Local models<br><em>at hand.</em>', agents:'Agents<br><em>in concert.</em>', ops:'Work<br><em>in motion.</em>' };
+    const titles = { dashboard:'One place<br><em>to think.</em>', llm:'Local models<br><em>at hand.</em>', governance:'Rules<br><em>with teeth.</em>', agents:'Agents<br><em>in concert.</em>', ops:'Work<br><em>in motion.</em>' };
     document.querySelectorAll('[data-workspace]').forEach((button) => button.addEventListener('click', () => { const key=button.dataset.workspace; document.querySelectorAll('[data-workspace]').forEach((item)=>item.classList.toggle('active',item===button)); document.querySelectorAll('.workspace').forEach((item)=>item.classList.toggle('active',item.id===`workspace-${key}`)); document.querySelector('#page-title').innerHTML=titles[key]; }));
 
     const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -230,9 +231,92 @@
       }
     }
 
+    // The control plane. Both reads are rendered: /health needs no credential, so
+    // it still answers when the token is wrong — which is what makes "reachable
+    // but refusing us" distinguishable from "not running" on screen.
+    async function loadGovernance() {
+      const summary = document.querySelector('#gov-summary');
+      const content = document.querySelector('#gov-content');
+      const toolBox = document.querySelector('#gov-tools');
+      try {
+        const [healthResponse, statusResponse] = await Promise.all([
+          fetch('/api/governance/health'),
+          fetch('/api/governance/status')
+        ]);
+        if (!healthResponse.ok) throw new Error(`API returned ${healthResponse.status}`);
+        const health = await healthResponse.json();
+        const status = statusResponse.ok ? await statusResponse.json() : null;
+
+        const endpoint = health.endpoint || 'not configured';
+        summary.innerHTML = `<div class="notice">CONTROL PLANE: <span class="state state-${escapeHtml(health.status)}">${escapeHtml(health.status)}</span>
+          &nbsp;&middot;&nbsp; <code>${escapeHtml(endpoint)}</code>
+          ${health.errorMessage ? `&nbsp;&middot;&nbsp; ${escapeHtml(health.errorMessage)}` : ''}</div>`;
+
+        const kernel = health.control_plane;
+        const checks = kernel && kernel.checks ? Object.entries(kernel.checks) : [];
+        const componentRows = checks.map(([name, check]) =>
+          `<li><span>${escapeHtml(name.replace(/_/g, ' '))}</span>
+            <span class="state state-${escapeHtml(check.status)}">${escapeHtml(check.status)}</span>
+            <small>${escapeHtml(check.detail || '')}</small></li>`).join('');
+
+        const plane = status && status.control_plane;
+        const facts = [];
+        if (plane) {
+          if (plane.policies) facts.push(['policies', `${plane.policies.enabled}/${plane.policies.total} enabled`]);
+          // A null tool count means no registry is attached. Rendering 0 would be a
+          // fabrication, so the row is omitted instead.
+          if (plane.tools && plane.tools.registered !== null && plane.tools.registered !== undefined) {
+            facts.push(['tools', plane.tools.enabled !== null && plane.tools.enabled !== undefined
+              ? `${plane.tools.enabled}/${plane.tools.registered} enabled` : String(plane.tools.registered)]);
+          }
+          if (plane.risk_model) facts.push(['risk levels', String(plane.risk_model.levels)]);
+          if (plane.provider) facts.push(['model provider', `${plane.provider.name}/${plane.provider.model}`]);
+          if (plane.environment) facts.push(['environment', plane.environment]);
+          // Worth showing: with deny_by_default nothing requiring a human can run.
+          if (plane.approval_handler) facts.push(['approval handler', plane.approval_handler]);
+          if (plane.authentication) facts.push(['authentication', plane.authentication]);
+        }
+
+        const factGrid = facts.length
+          ? `<div class="metrics">${facts.map(([label, value]) =>
+              `<div class="metric"><b>${escapeHtml(value)}</b><small>${escapeHtml(label)}</small></div>`).join('')}</div>`
+          : '';
+
+        if (health.status === 'unavailable') {
+          content.innerHTML = `<div class="err">The control plane is not answering at <code>${escapeHtml(endpoint)}</code>.
+            ${escapeHtml(health.errorMessage || '')}</div>
+            <div class="empty">Start it with <code>python -m paios.serve</code>. No governance figures are shown because none were measured.</div>`;
+        } else {
+          const statusError = status && status.errorMessage
+            ? `<div class="err">${escapeHtml(status.errorMessage)}</div>` : '';
+          content.innerHTML = `${statusError}${factGrid}
+            ${componentRows ? `<ul class="models">${componentRows}</ul>` : ''}`;
+        }
+
+        // Tool registry, read through the same credential.
+        const toolResponse = await fetch('/api/governance/tools');
+        const tools = toolResponse.ok ? await toolResponse.json() : null;
+        if (!tools || tools.status === 'unavailable') {
+          toolBox.innerHTML = '';
+        } else if ((tools.tools || []).length === 0) {
+          toolBox.innerHTML = `<div class="empty">No tools registered${tools.detail ? ` &mdash; ${escapeHtml(tools.detail)}` : ''}.</div>`;
+        } else {
+          toolBox.innerHTML = `<p class="eyebrow">Tool registry</p><ul class="models">${tools.tools.map((t) =>
+            `<li><span>${escapeHtml(t.tool_id)}</span>
+              <span class="state state-${t.availability === 'available' ? 'healthy' : 'unknown'}">${escapeHtml(t.risk_level || '')}</span>
+              <small>${escapeHtml(t.operation_type || '')}</small></li>`).join('')}</ul>`;
+        }
+      } catch (error) {
+        summary.innerHTML = '';
+        content.innerHTML = `<div class="err">Could not reach the governance API: ${escapeHtml(error.message)}</div>`;
+        toolBox.innerHTML = '';
+      }
+    }
+
     loadDashboard();
     loadWorkspaces();
     loadProviders();
+    loadGovernance();
     loadOperations();
   </script>
 </body>

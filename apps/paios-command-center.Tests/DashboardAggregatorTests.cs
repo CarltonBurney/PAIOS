@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
 using Paios.CommandCenter.Configuration;
 using Paios.CommandCenter.Dashboard;
+using Paios.CommandCenter.Governance;
 using Paios.CommandCenter.Operations;
 using Paios.CommandCenter.Providers;
 
@@ -46,7 +47,20 @@ public sealed class DashboardAggregatorTests
         LastCheckedAt = DateTimeOffset.UtcNow.ToString("O")
     };
 
-    private DashboardAggregator Build(StubHttpMessageHandler providerHandler, params IServiceHealthCheck[] checks)
+    /// <summary>
+    /// Governance defaults to disabled here so these tests keep measuring what
+    /// they were written to measure. The governance subsystem has its own tests
+    /// below, which enable it explicitly.
+    /// </summary>
+    private DashboardAggregator Build(
+        StubHttpMessageHandler providerHandler,
+        params IServiceHealthCheck[] checks)
+        => Build(providerHandler, GovernanceStub.Disabled(), checks);
+
+    private DashboardAggregator Build(
+        StubHttpMessageHandler providerHandler,
+        GovernanceClient governance,
+        params IServiceHealthCheck[] checks)
     {
         var store = new ProviderConfigurationStore(_providerConfigPath, NullLogger<ProviderConfigurationStore>.Instance);
         var client = new HttpClient(providerHandler);
@@ -55,7 +69,7 @@ public sealed class DashboardAggregatorTests
             new OpenAiCompatibleAdapter(client, _ => null),
             NullLogger<ProviderRegistry>.Instance);
         var operations = new OperationsRegistry(checks, NullLogger<OperationsRegistry>.Instance);
-        return new DashboardAggregator(providers, operations, NullLogger<DashboardAggregator>.Instance);
+        return new DashboardAggregator(providers, operations, governance, NullLogger<DashboardAggregator>.Instance);
     }
 
     [TestMethod]
@@ -131,8 +145,8 @@ public sealed class DashboardAggregatorTests
 
         var snapshot = await dashboard.GetSnapshotAsync();
 
-        // Three cards still render — the dashboard survives a broken subsystem.
-        Assert.AreEqual(3, snapshot.Subsystems.Count);
+        // Every card still renders — the dashboard survives a broken subsystem.
+        Assert.AreEqual(4, snapshot.Subsystems.Count);
         Assert.AreEqual(HealthState.Healthy, snapshot.Subsystems.Single(s => s.SubsystemId == "models").Status);
     }
 
@@ -163,7 +177,7 @@ public sealed class DashboardAggregatorTests
     public async Task Every_subsystem_drills_into_a_real_workspace_id()
     {
         var dashboard = Build(StubHttpMessageHandler.Throwing(new HttpRequestException("refused")));
-        string[] navIds = ["dashboard", "llm", "agents", "ops"];
+        string[] navIds = ["dashboard", "llm", "governance", "agents", "ops"];
 
         foreach (var subsystem in (await dashboard.GetSnapshotAsync()).Subsystems)
         {

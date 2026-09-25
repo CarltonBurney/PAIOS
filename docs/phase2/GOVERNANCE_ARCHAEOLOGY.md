@@ -125,17 +125,28 @@ reviewed governance code that already satisfies most of Phase 2's exit criteria.
 
 Ordered:
 
-1. **Merge PR #2.** It is green, mergeable, not a draft, and has waited since
-   2026-08-23. It is the single highest-value action available in this project.
-2. **Resolve the `Program.cs` collision first.** PR #2 and PR #4 both modify
-   `apps/paios-command-center/Program.cs` and `wwwroot/index.html`. PR #2 carries
-   the *pre-Phase-1* versions — merging it after PR #4 without care would revert
-   the provider layer and restore the old workspace ids. Merge order matters,
-   or PR #2 needs a rebase onto PR #4.
-3. **Wire Agent Lab to the merged control plane.** Phase 2's exit — trace one
-   agent through identity → purpose → policy → tool registry → execution gateway
-   → audit — becomes reachable: `control_plane.py` already implements that exact
-   pipeline. The remaining work is an HTTP surface and a UI, not a kernel.
+1. **Merge PR #2.** — **DONE.** Merged into
+   `claude/docker-desktop-init-blocked-k7zwoa`. Both suites pass in the merged
+   tree.
+2. ~~**Resolve the `Program.cs` collision first.**~~ — **WITHDRAWN: this was
+   wrong.** The claim below was made from the fact that PR #2 *contains*
+   pre-Phase-1 copies of `Program.cs` and `wwwroot/index.html`, without checking
+   whether it *changed* them. It did not: both files are identical to the merge
+   base `07457fc` on that branch. Git therefore keeps whichever side actually
+   changed them — this one — in either merge order, and the merge was clean with
+   no conflict to resolve. Verified after merging: the provider, operations and
+   dashboard endpoints are all still served and the workspace ids are unchanged.
+
+   > *Original, incorrect:* "PR #2 and PR #4 both modify
+   > `apps/paios-command-center/Program.cs` and `wwwroot/index.html`. PR #2
+   > carries the pre-Phase-1 versions — merging it after PR #4 without care
+   > would revert the provider layer and restore the old workspace ids."
+
+3. **Build the bridge.** — **DONE.** The kernel now serves HTTP and the Command
+   Center reads it; see `docs/phase2/CONTROL_PLANE_BRIDGE.md`. What remains for
+   Phase 2's exit — trace one agent through identity → purpose → policy → tool
+   registry → execution gateway → audit — is the **agent layer**, not the
+   kernel and not the transport.
 4. **Then build only what is genuinely missing**, each small and additive:
    KillSwitch, AgentCredential, PurposeBind as a named construct, and SHA-256
    chaining over the existing `AuditEvent` stream.

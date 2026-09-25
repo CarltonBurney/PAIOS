@@ -142,6 +142,12 @@ class GovernanceApi:
     authenticator: Authenticator = field(default_factory=TokenAuthenticator)
     audit_sink: InMemoryAuditSink | None = None
 
+    #: Why the tool registry is absent, when it is absent because loading it
+    #: failed. Distinguishing that from "no registry configured" matters: one is
+    #: a fault to report and the other is a choice, and reporting a failed load
+    #: as healthy would hide it.
+    tool_registry_error: str | None = None
+
     def dispatch(
         self,
         method: str,
@@ -255,6 +261,8 @@ class GovernanceApi:
         return f"risk model '{model.name}' with {len(model.levels)} levels"
 
     def _probe_tools(self) -> str:
+        if self.tool_registry_error is not None:
+            raise RuntimeError(self.tool_registry_error)
         if self.tool_registry is None:
             return "no tool registry attached"
         return f"{len(self.tool_registry)} tools registered"

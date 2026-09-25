@@ -89,10 +89,28 @@ def test_health_degrades_when_a_component_fails():
 
 
 def test_health_without_a_tool_registry_is_still_healthy():
+    """No registry configured is a choice, not a fault."""
     api = build(registry=False)
     response = api.dispatch("GET", "/health")
     assert response.status == 200
     assert response.payload["checks"]["tool_registry"]["status"] == "healthy"
+    assert "no tool registry" in response.payload["checks"]["tool_registry"]["detail"]
+
+
+def test_a_tool_registry_that_failed_to_load_is_not_reported_healthy():
+    """A failed load must not be indistinguishable from a deliberate absence.
+
+    Both leave ``tool_registry`` as None; only one is a fault, and conflating
+    them would hide a broken document behind a green light.
+    """
+    api = build(registry=False)
+    api.tool_registry_error = "tool registry at /nope.json failed to load: missing"
+
+    response = api.dispatch("GET", "/health")
+    assert response.status == 503
+    assert response.payload["status"] == "degraded"
+    assert response.payload["checks"]["tool_registry"]["status"] == "unavailable"
+    assert "failed to load" in response.payload["checks"]["tool_registry"]["detail"]
 
 
 # -- authentication ----------------------------------------------------------

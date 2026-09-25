@@ -57,18 +57,26 @@ def build_api(settings: Settings | None = None) -> GovernanceApi:
         environment=settings.environment,
     )
 
-    registry: ToolRegistry | None
+    # A failed registry load does not stop the process — policy and risk still
+    # govern, and refusing to start would take the whole surface down over a
+    # document the pipeline does not need. But the failure is carried through to
+    # /health rather than looking like an absent registry.
+    registry: ToolRegistry | None = None
+    registry_error: str | None = None
     try:
         registry = ToolRegistry.from_file(settings.tool_registry_path)
-    except Exception:  # noqa: BLE001 - reported by /health as unavailable
+    except Exception as exc:  # noqa: BLE001 - reported by /health as unavailable
         log.exception("tool registry failed to load; continuing without it")
-        registry = None
+        registry_error = (
+            f"tool registry at {settings.tool_registry_path} failed to load: {exc}"
+        )
 
     return GovernanceApi(
         control_plane=control_plane,
         tool_registry=registry,
         authenticator=_authenticator_from_env(),
         audit_sink=memory_sink,
+        tool_registry_error=registry_error,
     )
 
 

@@ -51,8 +51,15 @@ Agent Lab is reported with `availability: "not_implemented"`, `status:
    banner to `unknown`, and must not be counted as healthy either. If *nothing*
    is implemented the roll-up is `unknown`, never `healthy`.
 
-Its `detail` states that Phase 2 is blocked pending resolution of the governance
-implementation location.
+Its `detail` names what is absent — an agent registry and execution path — and
+notes that the merged kernel provides the Tool Registry and Execution Gateway such
+a layer would run under. It no longer refers to the governance location blocker,
+which is resolved.
+
+**Governance** is the counter-example that makes the distinction concrete: it is
+`implemented`, so an unreachable control plane reads `unavailable`, not
+`not_implemented`, and contributes no metrics rather than zeros. See
+`docs/phase2/CONTROL_PLANE_BRIDGE.md` for the observed states.
 
 ## Drill-down
 
