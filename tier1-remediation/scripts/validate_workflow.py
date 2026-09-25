@@ -13,7 +13,9 @@ import re
 import sys
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parents[1] / "workflows" / "tier1-remediation.json"
+DEFAULT_PATH = (
+    Path(__file__).resolve().parents[1] / "workflows" / "tier1-remediation.json"
+)
 
 # Placeholder identifiers the reference implementation is expected to ship with.
 # Anything outside these is treated as a real tenant value that must not be committed.
@@ -154,7 +156,7 @@ def main() -> int:
 
     # 7. Variables are initialized before use.
     initialized = set()
-    for name, body, _ in all_actions:
+    for _name, body, _ in all_actions:
         if body.get("type") == "InitializeVariable":
             for var in body.get("inputs", {}).get("variables", []):
                 initialized.add(var["name"])

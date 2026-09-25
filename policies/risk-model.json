@@ -1,0 +1,184 @@
+{
+  "riskModelName": "PAIOS Risk Model v1.0",
+  "description": "Two-axis risk model. 'level' is an ordered impact scale (L0-L4). 'domains' are non-exclusive kinds of concern. A request carries one level and zero or more domains. Detectors escalate the level and accumulate domains; nothing here can lower a level once raised.",
+  "defaultLevel": "L0",
+  "levels": {
+    "L0": {
+      "label": "informational / read-only / public",
+      "disposition": "auto_execute",
+      "logged": false
+    },
+    "L1": {
+      "label": "low-impact internal",
+      "disposition": "auto_execute",
+      "logged": true
+    },
+    "L2": {
+      "label": "controlled business action",
+      "disposition": "auto_execute",
+      "logged": true
+    },
+    "L3": {
+      "label": "sensitive / high-impact, approval required",
+      "disposition": "human_review",
+      "logged": true
+    },
+    "L4": {
+      "label": "prohibited, or executive / security escalation",
+      "disposition": "admin_escalation",
+      "logged": true
+    }
+  },
+  "rules": {
+    "unauthenticated": { "level": "L4", "domains": ["security"] },
+    "governanceChangeMinimum": { "level": "L3", "domains": ["governance"] },
+    "lowConfidenceMinimum": { "level": "L1", "domains": [] },
+    "lowConfidenceThreshold": 0.3
+  },
+  "detectors": [
+    {
+      "id": "privileged_grant",
+      "level": "L4",
+      "domains": ["security"],
+      "patterns": [
+        "\\bgrant\\b",
+        "\\brevoke\\b",
+        "\\bprivilege\\b",
+        "\\badmin(?:istrator)?\\b",
+        "\\broot\\b",
+        "\\brole assignment\\b",
+        "\\bservice principal\\b"
+      ]
+    },
+    {
+      "id": "credential_exposure",
+      "level": "L4",
+      "domains": ["security"],
+      "patterns": [
+        "\\bcredential\\b",
+        "\\bsecret\\b",
+        "\\bapi[- ]?key\\b",
+        "\\bpassword\\b",
+        "\\btoken\\b"
+      ]
+    },
+    {
+      "id": "destructive_action",
+      "level": "L4",
+      "domains": ["security", "operational"],
+      "patterns": [
+        "\\bdelete (?:the )?(?:database|tenant|account|user)\\b",
+        "\\bdisable (?:logging|audit|mfa)\\b",
+        "\\bdrop table\\b"
+      ]
+    },
+    {
+      "id": "access_configuration",
+      "level": "L3",
+      "domains": ["security"],
+      "patterns": [
+        "\\bpermission(s)?\\b",
+        "\\baccess (?:control|right|level)s?\\b",
+        "\\bfirewall\\b",
+        "\\bnetwork policy\\b"
+      ]
+    },
+    {
+      "id": "regulatory",
+      "level": "L3",
+      "domains": ["compliance"],
+      "patterns": [
+        "\\bgdpr\\b",
+        "\\bhipaa\\b",
+        "\\bsox\\b",
+        "\\bpci\\b",
+        "\\bccpa\\b",
+        "\\bregulat",
+        "\\bcompliance\\b",
+        "\\bsubpoena\\b",
+        "\\bdata residency\\b",
+        "\\bretention (?:policy|period|schedule)\\b"
+      ]
+    },
+    {
+      "id": "legal",
+      "level": "L3",
+      "domains": ["compliance", "financial"],
+      "patterns": [
+        "\\blegal\\b",
+        "\\bcontract\\b",
+        "\\bliabilit",
+        "\\bdisclosure\\b"
+      ]
+    },
+    {
+      "id": "personal_data",
+      "level": "L3",
+      "domains": ["privacy"],
+      "patterns": [
+        "\\bssn\\b",
+        "\\bsocial security\\b",
+        "\\bdate of birth\\b",
+        "\\bdob\\b",
+        "\\bmedical\\b",
+        "\\bdiagnos",
+        "\\bpersonal (?:data|information)\\b",
+        "\\bpii\\b",
+        "\\bhome address\\b",
+        "\\bemployee record\\b",
+        "\\bclient (?:data|record|list|information)\\b",
+        "\\bcustomer (?:data|record|list)\\b"
+      ]
+    },
+    {
+      "id": "compensation",
+      "level": "L3",
+      "domains": ["privacy", "financial"],
+      "patterns": [
+        "\\bsalary\\b",
+        "\\bcompensation\\b",
+        "\\bpayroll\\b"
+      ]
+    },
+    {
+      "id": "business_mutation",
+      "level": "L2",
+      "domains": ["operational"],
+      "patterns": [
+        "\\bupdate\\b",
+        "\\bcreate\\b",
+        "\\bmodify\\b",
+        "\\bchange\\b",
+        "\\bpublish\\b",
+        "\\bapprove\\b",
+        "\\bsend\\b"
+      ]
+    }
+  ],
+  "structuralDetectors": [
+    {
+      "id": "email_address",
+      "level": "L3",
+      "domains": ["privacy"],
+      "pattern": "\\b[\\w.+-]+@[\\w-]+\\.[\\w.]{2,}\\b"
+    },
+    {
+      "id": "ssn_format",
+      "level": "L3",
+      "domains": ["privacy"],
+      "pattern": "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+    },
+    {
+      "id": "credit_card_format",
+      "level": "L3",
+      "domains": ["privacy", "financial"],
+      "pattern": "\\b(?:\\d[ -]?){13,16}\\b"
+    },
+    {
+      "id": "phone_format",
+      "level": "L3",
+      "domains": ["privacy"],
+      "pattern": "\\b(?:\\+?1[-. ]?)?\\(?\\d{3}\\)?[-. ]\\d{3}[-. ]\\d{4}\\b"
+    }
+  ]
+}
